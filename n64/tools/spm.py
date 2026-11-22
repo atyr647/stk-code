@@ -197,3 +197,134 @@ def recompute_bbox(m):
             xs.append(x); ys.append(y); zs.append(z)
     if xs:
         m.bbox = [min(xs), min(ys), min(zs), max(xs), max(ys), max(zs)]
+
+
+# ---------------------------------------------------------------------------
+# Skeletal animation (the `tail` of an SPMA mesh)
+# ---------------------------------------------------------------------------
+# Layout, as GE::Armature::read / SPMeshLoader::createAnimationData read it:
+#   u8 armature_count, u16 bind_frame
+#   per armature:
+#     u16 joint_used, u16 joint_count, joint_count x (u8 len + name),
+#     joint_count x LocRotScale (10 x f32: loc xyz, rot xyzw, scale xyz),
+#     joint_count x i16 parent,
+#     u16 frame_count, frame_count x (u16 frame_index,
+#                                     joint_count x LocRotScale)
+class Armature:
+    def __init__(self):
+        self.joint_used = 0
+        self.names = []
+        self.bind = []          # joint_count x 10 floats
+        self.parents = []
+        self.frames = []        # list of (frame_index, joint_count x 10 floats)
+
+
+def load_animation(tail):
+    p = 0
+    n_arm = tail[p]; p += 1
+    (bind_frame,) = struct.unpack_from("<H", tail, p); p += 2
+    arms = []
+    for _ in range(n_arm):
+        a = Armature()
+        a.joint_used, jc = struct.unpack_from("<HH", tail, p); p += 4
+        for _j in range(jc):
+            n = tail[p]; p += 1
+            a.names.append(tail[p:p + n]); p += n
+        for _j in range(jc):
+            a.bind.append(struct.unpack_from("<10f", tail, p)); p += 40
+        a.parents = list(struct.unpack_from("<%dh" % jc, tail, p)); p += 2 * jc
+        (fc,) = struct.unpack_from("<H", tail, p); p += 2
+        for _f in range(fc):
+            (idx,) = struct.unpack_from("<H", tail, p); p += 2
+            pose = [struct.unpack_from("<10f", tail, p + 40 * j) for j in range(jc)]
+            p += 40 * jc
+            a.frames.append((idx, pose))
+        arms.append(a)
+    return bind_frame, arms, tail[p:]
+
+
+def dump_animation(bind_frame, arms, rest=b""):
+    out = bytearray([len(arms)])
+    out += struct.pack("<H", bind_frame)
+    for a in arms:
+        jc = len(a.names)
+        out += struct.pack("<HH", a.joint_used, jc)
+        for n in a.names:
+            out.append(len(n)); out += n
+        for b in a.bind:
+            out += struct.pack("<10f", *b)
+        out += struct.pack("<%dh" % jc, *a.parents)
+        out += struct.pack("<H", len(a.frames))
+        for idx, pose in a.frames:
+            out += struct.pack("<H", idx)
+            for lrs in pose:
+                out += struct.pack("<10f", *lrs)
+    return bytes(out) + rest
+
+
+def _slerp(q1, q2, t):
+    import math
+    dot = sum(a * b for a, b in zip(q1, q2))
+    if dot < 0:
+        q2 = [-x for x in q2]; dot = -dot
+    if dot > 0.9995:
+        r = [a + t * (b - a) for a, b in zip(q1, q2)]
+    else:
+        th = math.acos(min(1.0, dot))
+        s = math.sin(th)
+        w1, w2 = math.sin((1 - t) * th) / s, math.sin(t * th) / s
+        r = [w1 * a + w2 * b for a, b in zip(q1, q2)]
+    n = math.sqrt(sum(x * x for x in r)) or 1.0
+    return [x / n for x in r]
+
+
+def _pose_error(a, b, interp_t, actual):
+    """max (loc distance, rotation angle in rad, scale delta) between the
+    interpolation of poses a->b at t and the actual pose, over all joints --
+    the same lerp/slerp GE::Armature::getInterpolatedMatrices uses."""
+    import math
+    el = er = es = 0.0
+    for ja, jb, jx in zip(a, b, actual):
+        loc = [ja[i] + interp_t * (jb[i] - ja[i]) for i in range(3)]
+        el = max(el, math.sqrt(sum((loc[i] - jx[i]) ** 2 for i in range(3))))
+        q = _slerp(ja[3:7], jb[3:7], interp_t)
+        qx = jx[3:7]
+        n = math.sqrt(sum(v * v for v in qx)) or 1.0
+        d = abs(sum(q[i] * qx[i] / n for i in range(4)))
+        er = max(er, 2 * math.acos(min(1.0, d)))
+        sc = [ja[7 + i] + interp_t * (jb[7 + i] - ja[7 + i]) for i in range(3)]
+        es = max(es, max(abs(sc[i] - jx[7 + i]) for i in range(3)))
+    return el, er, es
+
+
+def reduce_keyframes(arm, keep, tol_loc=0.01, tol_rot=0.026, tol_scale=0.01):
+    """Drop keyframes that interpolation between their neighbours reproduces
+    within tolerance (default 1 cm, 1.5 degrees, 1 % scale). Frames whose
+    index is in `keep` (animation start/end markers from kart.xml) and the
+    first/last frames always stay. Greedy, left to right."""
+    fr = arm.frames
+    if len(fr) <= 2:
+        return
+    out = [fr[0]]
+    anchor = 0
+    j = 1
+    while j < len(fr):
+        if fr[j][0] in keep or j == len(fr) - 1:
+            out.append(fr[j]); anchor = j; j += 1
+            continue
+        # can we skip fr[j] (and everything between anchor and j+1)?
+        nxt = j + 1
+        ok = True
+        a_idx, a_pose = fr[anchor]
+        b_idx, b_pose = fr[nxt]
+        for k in range(anchor + 1, nxt):
+            t = (fr[k][0] - a_idx) / float(b_idx - a_idx)
+            el, er, es = _pose_error(a_pose, b_pose, t, fr[k][1])
+            if el > tol_loc or er > tol_rot or es > tol_scale:
+                ok = False
+                break
+        if ok:
+            j += 1              # fr[j] is redundant; keep scanning
+        else:
+            out.append(fr[j]); anchor = j; j += 1
+    arm.frames = out

@@ -31,6 +31,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +63,16 @@ BUDGETS = {
     "texture_texels": 64 * 64,
     "texture_texels_crowded": 32 * 32,   # tracks with many textures
     "crowded_texture_count": 90,
+    # kart skeletal animation: drop keyframes that interpolation reproduces
+    # within these (3 cm, 4 degrees, 3 % scale -- a kart is ~30 px tall on
+    # a 320x240 screen)
+    "anim_tol_loc_m": 0.03,
+    "anim_tol_rot_rad": 0.07,
+    "anim_tol_scale": 0.03,
+    # audio (libdragon audioconv64): music stereo, sfx mono
+    "audio_rate": 22050,
+    "music_codec": "ulc",
+    "sfx_codec": "ulc",
 }
 
 MESHSIMPLIFY = os.environ.get("MESHSIMPLIFY", "meshsimplify")
@@ -540,6 +551,8 @@ class Pipeline:
         meshes = [os.path.join(r, f) for r, _d, fs in os.walk(kd)
                   for f in fs if f.endswith(".spm")]
         src_total = sum(self.load(p).tri_count for p in meshes)
+        keep_frames = self._animation_markers(kd)
+        src_anim = sum(len(self.load(p).tail) for p in meshes)
         ratio = min(1.0, self.b["kart_tris"] / max(1, src_total))
         out_total = 0
         for p in meshes:
@@ -548,6 +561,8 @@ class Pipeline:
                          int(m.tri_count * ratio))
             # karts are closed, separately-skinned parts: no border locking
             m = decimate(m, target, lock_border=False)
+            if m.skinned and m.tail:
+                m.tail = self._reduce_animation(m.tail, keep_frames)
             self.write_mesh(p, m)
             out_total += m.tri_count
         tex_bytes = 0
@@ -558,9 +573,35 @@ class Pipeline:
                               else self.b["texture_texels"])
                     _o, (w, h) = self.image(os.path.join(r, f), texels)
                     tex_bytes += w * h // 2
+        out_anim = sum(len(spm.load(open(self.outpath(p), "rb").read()).tail)
+                       for p in meshes)
         self.report["karts"][name] = {"src_tris": src_total,
                                       "tris": out_total,
+                                      "src_animation_bytes": src_anim,
+                                      "animation_bytes": out_anim,
                                       "texture_bytes_ci4": tex_bytes}
+
+    @staticmethod
+    def _animation_markers(kd):
+        """Frame numbers kart.xml's <animations> names (start/end of
+        steering, winning, losing, ...): keyframe reduction keeps them."""
+        import re
+        try:
+            x = open(os.path.join(kd, "kart.xml"), encoding="utf-8",
+                     errors="replace").read()
+        except FileNotFoundError:
+            return set()
+        blk = re.search(r"<animations([^>]*)>", x, re.S)
+        return (set(int(v) for v in re.findall(r'"\s*(\d+)\s*"', blk.group(1)))
+                if blk else set())
+
+    def _reduce_animation(self, tail, keep):
+        bind, arms, rest = spm.load_animation(tail)
+        for a in arms:
+            spm.reduce_keyframes(a, keep, self.b["anim_tol_loc_m"],
+                                 self.b["anim_tol_rot_rad"],
+                                 self.b["anim_tol_scale"])
+        return spm.dump_animation(bind, arms, rest)
 
     # -- the rest -------------------------------------------------------------------
     def models(self):
@@ -599,11 +640,57 @@ class Pipeline:
                     self.image(p, self.b["texture_texels"])
 
     def copy_audio(self):
+        """music/ and sfx/: XML descriptors copied; every .ogg converted to
+        libdragon's .wav64 next to it (same base name), with the RSP's ULC
+        codec -- measured smallest and cheapest to decode of libdragon's
+        three (see n64/README.md). Needs oggdec and libdragon's audioconv64
+        ($N64_INST/bin); without them the .ogg files are copied as they
+        are."""
+        import concurrent.futures
+        audioconv = os.path.join(os.environ.get("N64_INST", "/opt/pak-n64"),
+                                 "bin", "audioconv64")
+        have_tools = (shutil.which("oggdec") is not None and
+                      os.access(audioconv, os.X_OK))
+        jobs = []
         for d in ("music", "sfx"):
-            s = os.path.join(self.assets, d)
-            if os.path.isdir(s):
-                shutil.copytree(s, os.path.join(self.out, d),
-                                dirs_exist_ok=True)
+            src = os.path.join(self.assets, d)
+            if not os.path.isdir(src):
+                continue
+            self.copy_tree_non_assets(src)
+            for f in sorted(os.listdir(src)):
+                if f.endswith(".ogg"):
+                    jobs.append((d, os.path.join(src, f)))
+        if not have_tools:
+            self.log("  ! oggdec/audioconv64 missing: copying .ogg unconverted")
+            for d, p in jobs:
+                shutil.copy2(p, self.outpath(p))
+            return
+
+        def convert(job):
+            d, p = job
+            out_dir = os.path.dirname(self.outpath(p))
+            os.makedirs(out_dir, exist_ok=True)
+            base = os.path.splitext(os.path.basename(p))[0]
+            with tempfile.TemporaryDirectory() as tmp:
+                wav = os.path.join(tmp, base + ".wav")
+                subprocess.run(["oggdec", "-Q", "-o", wav, p], check=True)
+                args = [audioconv, "--wav-compress", self.b[d + "_codec"],
+                        "--wav-resample", str(self.b["audio_rate"]),
+                        "-o", out_dir, wav]
+                if d == "sfx":
+                    args[1:1] = ["--wav-mono"]
+                subprocess.run(args, check=True, capture_output=True)
+            return d, os.path.getsize(p), os.path.getsize(
+                os.path.join(out_dir, base + ".wav64"))
+
+        totals = {}
+        with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as ex:
+            for d, before, after in ex.map(convert, jobs):
+                t = totals.setdefault(d, [0, 0, 0])
+                t[0] += 1; t[1] += before; t[2] += after
+        self.report["audio"] = {
+            d: {"files": t[0], "ogg_bytes": t[1], "wav64_bytes": t[2]}
+            for d, t in totals.items()}
 
 
 def main():
