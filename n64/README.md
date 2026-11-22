@@ -1,5 +1,8 @@
 # SuperTuxKart on the Nintendo 64: scoping report
 
+> **Port in progress:** see [PORT_STATUS.md](PORT_STATUS.md) for the libdragon
+> build, the asset pipeline, and what currently runs in ares.
+
 **Goal:** run SuperTuxKart (STK) on N64 hardware as faithfully as possible,
 with as few source changes as possible.
 

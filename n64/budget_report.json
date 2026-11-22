@@ -1,0 +1,607 @@
+{
+ "audio": {
+  "music": {
+   "files": 39,
+   "ogg_bytes": 70123427,
+   "wav64_bytes": 14078786
+  },
+  "sfx": {
+   "files": 68,
+   "ogg_bytes": 5567832,
+   "wav64_bytes": 741937
+  }
+ },
+ "budgets": {
+  "anim_tol_loc_m": 0.03,
+  "anim_tol_rot_rad": 0.07,
+  "anim_tol_scale": 0.03,
+  "audio_rate": 22050,
+  "collision_error_m": 0.25,
+  "crowded_texture_count": 90,
+  "far_prune_error": 0.02,
+  "kart_tris": 500,
+  "library_ratio": 0.12,
+  "min_mesh_tris": 12,
+  "model_tris": 160,
+  "music_codec": "ulc",
+  "near_road_m": 20.0,
+  "road_error_m": 0.03,
+  "sfx_codec": "ulc",
+  "texture_max_edge": 64,
+  "texture_texels": 4096,
+  "texture_texels_crowded": 1024,
+  "track_scene_tris": 24000,
+  "track_unique_tris": 9000
+ },
+ "karts": {
+  "adiumy": {
+   "animation_bytes": 172563,
+   "src_animation_bytes": 182663,
+   "src_tris": 8286,
+   "texture_bytes_ci4": 28672,
+   "tris": 1416
+  },
+  "amanda": {
+   "animation_bytes": 13100,
+   "src_animation_bytes": 13100,
+   "src_tris": 5328,
+   "texture_bytes_ci4": 22528,
+   "tris": 514
+  },
+  "beastie": {
+   "animation_bytes": 685756,
+   "src_animation_bytes": 1835020,
+   "src_tris": 20036,
+   "texture_bytes_ci4": 83968,
+   "tris": 2174
+  },
+  "emule": {
+   "animation_bytes": 200789,
+   "src_animation_bytes": 235637,
+   "src_tris": 8977,
+   "texture_bytes_ci4": 18944,
+   "tris": 645
+  },
+  "gavroche": {
+   "animation_bytes": 15910,
+   "src_animation_bytes": 15910,
+   "src_tris": 5090,
+   "texture_bytes_ci4": 24576,
+   "tris": 755
+  },
+  "gnu": {
+   "animation_bytes": 95867,
+   "src_animation_bytes": 113737,
+   "src_tris": 12034,
+   "texture_bytes_ci4": 34816,
+   "tris": 501
+  },
+  "hexley": {
+   "animation_bytes": 30705,
+   "src_animation_bytes": 35515,
+   "src_tris": 13351,
+   "texture_bytes_ci4": 39424,
+   "tris": 1655
+  },
+  "kiki": {
+   "animation_bytes": 151335,
+   "src_animation_bytes": 166651,
+   "src_tris": 16884,
+   "texture_bytes_ci4": 21504,
+   "tris": 1115
+  },
+  "konqi": {
+   "animation_bytes": 687734,
+   "src_animation_bytes": 1489004,
+   "src_tris": 17828,
+   "texture_bytes_ci4": 38912,
+   "tris": 2087
+  },
+  "nolok": {
+   "animation_bytes": 55798,
+   "src_animation_bytes": 56560,
+   "src_tris": 5046,
+   "texture_bytes_ci4": 24704,
+   "tris": 1512
+  },
+  "pidgin": {
+   "animation_bytes": 17729,
+   "src_animation_bytes": 19135,
+   "src_tris": 12788,
+   "texture_bytes_ci4": 19584,
+   "tris": 3442
+  },
+  "puffy": {
+   "animation_bytes": 83269,
+   "src_animation_bytes": 83269,
+   "src_tris": 6264,
+   "texture_bytes_ci4": 13312,
+   "tris": 1676
+  },
+  "sara_the_racer": {
+   "animation_bytes": 300761,
+   "src_animation_bytes": 437435,
+   "src_tris": 16340,
+   "texture_bytes_ci4": 45056,
+   "tris": 536
+  },
+  "sara_the_wizard": {
+   "animation_bytes": 268810,
+   "src_animation_bytes": 304846,
+   "src_tris": 16072,
+   "texture_bytes_ci4": 40960,
+   "tris": 998
+  },
+  "suzanne": {
+   "animation_bytes": 13065,
+   "src_animation_bytes": 13065,
+   "src_tris": 2917,
+   "texture_bytes_ci4": 14848,
+   "tris": 649
+  },
+  "tux": {
+   "animation_bytes": 35451,
+   "src_animation_bytes": 39303,
+   "src_tris": 6238,
+   "texture_bytes_ci4": 20480,
+   "tris": 501
+  },
+  "wilber": {
+   "animation_bytes": 52380,
+   "src_animation_bytes": 55506,
+   "src_tris": 12811,
+   "texture_bytes_ci4": 14848,
+   "tris": 924
+  },
+  "xue": {
+   "animation_bytes": 46360,
+   "src_animation_bytes": 69448,
+   "src_tris": 3314,
+   "texture_bytes_ci4": 12800,
+   "tris": 533
+  }
+ },
+ "totals": {},
+ "tracks": {
+  "abyss": {
+   "kind": "race",
+   "local_ratio": 0.05718,
+   "missing": [],
+   "scene_tris": 42211,
+   "src_unique_tris": 130713,
+   "texture_bytes_ci4": 83720,
+   "textures": 43,
+   "unique_tris": 29233
+  },
+  "alien_signal": {
+   "kind": "arena",
+   "local_ratio": 0.07372,
+   "missing": [],
+   "scene_tris": 35364,
+   "src_unique_tris": 114062,
+   "texture_bytes_ci4": 90120,
+   "textures": 52,
+   "unique_tris": 21539
+  },
+  "ancient_colosseum_labyrinth": {
+   "kind": "arena",
+   "local_ratio": 0.08881,
+   "missing": [],
+   "scene_tris": 35888,
+   "src_unique_tris": 83219,
+   "texture_bytes_ci4": 157824,
+   "textures": 93,
+   "unique_tris": 20082
+  },
+  "arena_candela_city": {
+   "kind": "arena",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 52352,
+   "src_unique_tris": 63561,
+   "texture_bytes_ci4": 163840,
+   "textures": 97,
+   "unique_tris": 26541
+  },
+  "battleisland": {
+   "kind": "arena",
+   "local_ratio": 0.3699,
+   "missing": [],
+   "scene_tris": 14358,
+   "src_unique_tris": 23955,
+   "texture_bytes_ci4": 61696,
+   "textures": 34,
+   "unique_tris": 11588
+  },
+  "black_forest": {
+   "kind": "race",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 148530,
+   "src_unique_tris": 313983,
+   "texture_bytes_ci4": 194608,
+   "textures": 164,
+   "unique_tris": 99222
+  },
+  "candela_city": {
+   "kind": "race",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 33120,
+   "src_unique_tris": 105814,
+   "texture_bytes_ci4": 158720,
+   "textures": 93,
+   "unique_tris": 9053
+  },
+  "cave": {
+   "kind": "arena",
+   "local_ratio": 0.53443,
+   "missing": [],
+   "scene_tris": 10075,
+   "src_unique_tris": 16832,
+   "texture_bytes_ci4": 29824,
+   "textures": 16,
+   "unique_tris": 8997
+  },
+  "cocoa_temple": {
+   "kind": "race",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 70760,
+   "src_unique_tris": 92978,
+   "texture_bytes_ci4": 139136,
+   "textures": 81,
+   "unique_tris": 26180
+  },
+  "cornfield_crossing": {
+   "kind": "race",
+   "local_ratio": 0.04092,
+   "missing": [],
+   "scene_tris": 26323,
+   "src_unique_tris": 88239,
+   "texture_bytes_ci4": 159360,
+   "textures": 88,
+   "unique_tris": 13994
+  },
+  "endcutscene": {
+   "kind": "cutscene",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 8548,
+   "src_unique_tris": 8557,
+   "texture_bytes_ci4": 28672,
+   "textures": 16,
+   "unique_tris": 8548
+  },
+  "featunlocked": {
+   "kind": "cutscene",
+   "local_ratio": 0.99,
+   "missing": [],
+   "scene_tris": 8997,
+   "src_unique_tris": 9096,
+   "texture_bytes_ci4": 12288,
+   "textures": 6,
+   "unique_tris": 8997
+  },
+  "fortmagma": {
+   "kind": "race",
+   "local_ratio": 0.63548,
+   "missing": [],
+   "scene_tris": 8106,
+   "src_unique_tris": 14250,
+   "texture_bytes_ci4": 104704,
+   "textures": 35,
+   "unique_tris": 7446
+  },
+  "gplose": {
+   "kind": "cutscene",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 7639,
+   "src_unique_tris": 7173,
+   "texture_bytes_ci4": 18432,
+   "textures": 11,
+   "unique_tris": 7171
+  },
+  "gpwin": {
+   "kind": "cutscene",
+   "local_ratio": 0.63148,
+   "missing": [],
+   "scene_tris": 11637,
+   "src_unique_tris": 13810,
+   "texture_bytes_ci4": 56960,
+   "textures": 35,
+   "unique_tris": 8999
+  },
+  "gran_paradiso_island": {
+   "kind": "race",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 62969,
+   "src_unique_tris": 114611,
+   "texture_bytes_ci4": 168200,
+   "textures": 112,
+   "unique_tris": 26274
+  },
+  "hacienda": {
+   "kind": "race",
+   "local_ratio": 0.63376,
+   "missing": [],
+   "scene_tris": 12930,
+   "src_unique_tris": 13966,
+   "texture_bytes_ci4": 128584,
+   "textures": 59,
+   "unique_tris": 7797
+  },
+  "hole_drop": {
+   "kind": "soccer",
+   "local_ratio": 0.62264,
+   "missing": [],
+   "scene_tris": 9952,
+   "src_unique_tris": 14448,
+   "texture_bytes_ci4": 65664,
+   "textures": 21,
+   "unique_tris": 9682
+  },
+  "icy_soccer_field": {
+   "kind": "soccer",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 4206,
+   "src_unique_tris": 4210,
+   "texture_bytes_ci4": 22528,
+   "textures": 9,
+   "unique_tris": 4206
+  },
+  "introcutscene": {
+   "kind": "cutscene",
+   "local_ratio": 0.85125,
+   "missing": [],
+   "scene_tris": 9130,
+   "src_unique_tris": 10572,
+   "texture_bytes_ci4": 52224,
+   "textures": 30,
+   "unique_tris": 8986
+  },
+  "introcutscene2": {
+   "kind": "cutscene",
+   "local_ratio": 0.85971,
+   "missing": [],
+   "scene_tris": 8998,
+   "src_unique_tris": 10474,
+   "texture_bytes_ci4": 20480,
+   "textures": 12,
+   "unique_tris": 8998
+  },
+  "lasdunasarena": {
+   "kind": "arena",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 53675,
+   "src_unique_tris": 62229,
+   "texture_bytes_ci4": 151688,
+   "textures": 88,
+   "unique_tris": 24605
+  },
+  "lasdunassoccer": {
+   "kind": "soccer",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 51537,
+   "src_unique_tris": 53560,
+   "texture_bytes_ci4": 158080,
+   "textures": 83,
+   "unique_tris": 20378
+  },
+  "lighthouse": {
+   "kind": "race",
+   "local_ratio": 0.11828,
+   "missing": [],
+   "scene_tris": 15149,
+   "src_unique_tris": 49620,
+   "texture_bytes_ci4": 111744,
+   "textures": 46,
+   "unique_tris": 15196
+  },
+  "mines": {
+   "kind": "race",
+   "local_ratio": 0.14051,
+   "missing": [],
+   "scene_tris": 23264,
+   "src_unique_tris": 62600,
+   "texture_bytes_ci4": 118424,
+   "textures": 44,
+   "unique_tris": 20130
+  },
+  "minigolf": {
+   "kind": "race",
+   "local_ratio": 0.74185,
+   "missing": [],
+   "scene_tris": 13808,
+   "src_unique_tris": 14712,
+   "texture_bytes_ci4": 79360,
+   "textures": 32,
+   "unique_tris": 6956
+  },
+  "oasis": {
+   "kind": "soccer",
+   "local_ratio": 0.06953,
+   "missing": [],
+   "scene_tris": 23146,
+   "src_unique_tris": 129245,
+   "texture_bytes_ci4": 59520,
+   "textures": 30,
+   "unique_tris": 23146
+  },
+  "olivermath": {
+   "kind": "race",
+   "local_ratio": 0.33881,
+   "missing": [],
+   "scene_tris": 5406,
+   "src_unique_tris": 25776,
+   "texture_bytes_ci4": 68608,
+   "textures": 36,
+   "unique_tris": 2315
+  },
+  "overworld": {
+   "kind": "internal",
+   "local_ratio": 0.20797,
+   "missing": [],
+   "scene_tris": 23057,
+   "src_unique_tris": 42769,
+   "texture_bytes_ci4": 105608,
+   "textures": 112,
+   "unique_tris": 13839
+  },
+  "pumpkin_park": {
+   "kind": "arena",
+   "local_ratio": 0.0,
+   "missing": [],
+   "scene_tris": 19746,
+   "src_unique_tris": 94774,
+   "texture_bytes_ci4": 113536,
+   "textures": 64,
+   "unique_tris": 20885
+  },
+  "ravenbridge_mansion": {
+   "kind": "race",
+   "local_ratio": 0.02767,
+   "missing": [],
+   "scene_tris": 31426,
+   "src_unique_tris": 118060,
+   "texture_bytes_ci4": 145792,
+   "textures": 81,
+   "unique_tris": 26854
+  },
+  "sandtrack": {
+   "kind": "race",
+   "local_ratio": 0.67144,
+   "missing": [],
+   "scene_tris": 14453,
+   "src_unique_tris": 13284,
+   "texture_bytes_ci4": 58888,
+   "textures": 24,
+   "unique_tris": 6926
+  },
+  "scotland": {
+   "kind": "race",
+   "local_ratio": 0.14081,
+   "missing": [],
+   "scene_tris": 8401,
+   "src_unique_tris": 33700,
+   "texture_bytes_ci4": 122880,
+   "textures": 66,
+   "unique_tris": 10898
+  },
+  "snowmountain": {
+   "kind": "race",
+   "local_ratio": 0.44693,
+   "missing": [],
+   "scene_tris": 15811,
+   "src_unique_tris": 19841,
+   "texture_bytes_ci4": 73736,
+   "textures": 32,
+   "unique_tris": 7081
+  },
+  "snowtuxpeak": {
+   "kind": "race",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 7650,
+   "src_unique_tris": 6709,
+   "texture_bytes_ci4": 60424,
+   "textures": 24,
+   "unique_tris": 6011
+  },
+  "soccer_field": {
+   "kind": "soccer",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 2536,
+   "src_unique_tris": 2540,
+   "texture_bytes_ci4": 20608,
+   "textures": 7,
+   "unique_tris": 2536
+  },
+  "stadium": {
+   "kind": "arena",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 7939,
+   "src_unique_tris": 7940,
+   "texture_bytes_ci4": 17408,
+   "textures": 8,
+   "unique_tris": 7939
+  },
+  "stk_enterprise": {
+   "kind": "race",
+   "local_ratio": 0.20345,
+   "missing": [],
+   "scene_tris": 19811,
+   "src_unique_tris": 44002,
+   "texture_bytes_ci4": 135688,
+   "textures": 67,
+   "unique_tris": 19423
+  },
+  "temple": {
+   "kind": "arena",
+   "local_ratio": 0.38466,
+   "missing": [],
+   "scene_tris": 23646,
+   "src_unique_tris": 20440,
+   "texture_bytes_ci4": 67472,
+   "textures": 38,
+   "unique_tris": 8144
+  },
+  "tutorial": {
+   "kind": "internal",
+   "local_ratio": 1.0,
+   "missing": [],
+   "scene_tris": 6200,
+   "src_unique_tris": 6506,
+   "texture_bytes_ci4": 77056,
+   "textures": 42,
+   "unique_tris": 5480
+  },
+  "volcano_island": {
+   "kind": "race",
+   "local_ratio": 0.21901,
+   "missing": [],
+   "scene_tris": 9988,
+   "src_unique_tris": 38639,
+   "texture_bytes_ci4": 129152,
+   "textures": 72,
+   "unique_tris": 6181
+  },
+  "xr591": {
+   "kind": "race",
+   "local_ratio": 0.4289,
+   "missing": [],
+   "scene_tris": 9613,
+   "src_unique_tris": 23322,
+   "texture_bytes_ci4": 134352,
+   "textures": 33,
+   "unique_tris": 9613
+  },
+  "xr_soccer": {
+   "kind": "soccer",
+   "local_ratio": 0.24357,
+   "missing": [],
+   "scene_tris": 9796,
+   "src_unique_tris": 36946,
+   "texture_bytes_ci4": 73984,
+   "textures": 26,
+   "unique_tris": 9796
+  },
+  "zengarden": {
+   "kind": "race",
+   "local_ratio": 0.61946,
+   "missing": [],
+   "scene_tris": 9518,
+   "src_unique_tris": 15620,
+   "texture_bytes_ci4": 149568,
+   "textures": 44,
+   "unique_tris": 7869
+  }
+ }
+}
