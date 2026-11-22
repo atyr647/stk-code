@@ -29,6 +29,7 @@
 #include <matrix4.h>
 #include <quaternion.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -39,6 +40,32 @@ using namespace irr;
 
 namespace GE
 {
+// ----------------------------------------------------------------------------
+/** .spm files are stored little-endian. Reads \p count values of type T and
+ *  converts them to host byte order, so loading also works on big-endian
+ *  CPUs (e.g. MIPS / N64). On little-endian hosts this is a plain read. */
+template <typename T>
+inline void readLE(irr::io::IReadFile* f, T* out, size_t count = 1)
+{
+    f->read(out, (irr::s32)(sizeof(T) * count));
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    for (size_t i = 0; i < count && sizeof(T) > 1; i++)
+    {
+        uint8_t* b = reinterpret_cast<uint8_t*>(&out[i]);
+        std::reverse(b, b + sizeof(T));
+    }
+#endif
+}
+// ----------------------------------------------------------------------------
+/** Reads a little-endian value of type T and stores it in a (possibly wider)
+ *  integer, e.g. a 16-bit file field into an unsigned. */
+template <typename T, typename U>
+inline void readLEAs(irr::io::IReadFile* f, U* out)
+{
+    T tmp = 0;
+    readLE(f, &tmp);
+    *out = (U)tmp;
+}
 
 struct LocRotScale
 {
@@ -60,7 +87,7 @@ struct LocRotScale
     void read(irr::io::IReadFile* spm)
     {
         float tmp[10];
-        spm->read(&tmp, 40);
+        readLE(spm, tmp, 10);
         m_loc = core::vector3df(tmp[0], tmp[1], tmp[2]);
         m_rot = core::quaternion(tmp[3], tmp[4], tmp[5], tmp[6]);
         m_rot.normalize();
@@ -89,16 +116,16 @@ struct Armature
     void read(irr::io::IReadFile* spm)
     {
         LocRotScale lrs;
-        spm->read(&m_joint_used, 2);
+        readLEAs<uint16_t>(spm, &m_joint_used);
         assert(m_joint_used > 0);
         unsigned all_joints_size = 0;
-        spm->read(&all_joints_size, 2);
+        readLEAs<uint16_t>(spm, &all_joints_size);
         assert(all_joints_size > 0);
         m_joint_names.resize(all_joints_size);
         for (unsigned i = 0; i < all_joints_size; i++)
         {
             unsigned str_len = 0;
-            spm->read(&str_len, 1);
+            readLEAs<uint8_t>(spm, &str_len);
             m_joint_names[i].resize(str_len);
             spm->read(&m_joint_names[i].front(), str_len);
         }
@@ -116,7 +143,7 @@ struct Armature
         for (unsigned i = 0; i < all_joints_size; i++)
         {
             int16_t info = 0;
-            spm->read(&info, 2);
+            readLE(spm, &info);
             if (info == -1)
             {
                 non_parent_bone = true;
@@ -129,13 +156,13 @@ struct Armature
             exit(-1);
         }
         unsigned frame_size = 0;
-        spm->read(&frame_size, 2);
+        readLEAs<uint16_t>(spm, &frame_size);
         m_frame_pose_matrices.resize(frame_size);
         for (unsigned i = 0; i < frame_size; i++)
         {
             m_frame_pose_matrices[i].second.resize(all_joints_size);
             unsigned frame_index = 0;
-            spm->read(&frame_index, 2);
+            readLEAs<uint16_t>(spm, &frame_index);
             m_frame_pose_matrices[i].first = frame_index;
             for (unsigned j = 0; j < m_frame_pose_matrices[i].second.size(); j++)
             {
