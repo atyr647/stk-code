@@ -23,6 +23,9 @@
 #include "btBulletDynamicsCommon.h"
 
 #include "physics/user_pointer.hpp"
+#ifdef STK_LOW_MEMORY
+#include "mini_glm.hpp"
+#endif
 
 class Material;
 
@@ -45,8 +48,15 @@ private:
     btDefaultMotionState        *m_motion_state;
     btCollisionShape            *m_collision_shape;
 
+#ifdef STK_LOW_MEMORY
+    /** The three normals for each triangle, packed 10:10:10:2 the way .spm
+     *  files store normals (MiniGLM::compressVector3): 12 bytes per triangle
+     *  instead of 48. */
+    std::vector<uint32_t>       m_normals;
+#else
     /** The three normals for each triangle. */
     std::vector<btVector3>      m_normals;
+#endif
 
     /** Pre-compute value used in smoothing. */
     std::vector<float>          m_p1p2p3;
@@ -119,10 +129,18 @@ public:
                      btVector3 *p3) const
     {
         const IndexedMeshArray &m = m_mesh.getIndexedMeshArray();
+#ifdef STK_LOW_MEMORY
+        // 3-float vertices (see the TriangleMesh constructor)
+        const float *p = &(((const float*)(m[0].m_vertexBase))[9*indx]);
+        *p1 = btVector3(p[0], p[1], p[2]);
+        *p2 = btVector3(p[3], p[4], p[5]);
+        *p3 = btVector3(p[6], p[7], p[8]);
+#else
         btVector3 *p = &(((btVector3*)(m[0].m_vertexBase))[3*indx]);
         *p1 = p[0];
         *p2 = p[1];
         *p3 = p[2];
+#endif
     }   // getTriangle
     // ------------------------------------------------------------------------
     /** Returns the normals of the triangle with the given index.
@@ -133,10 +151,24 @@ public:
     {
         assert(indx < m_triangleIndex2Material.size());
         unsigned int n = indx*3;
+#ifdef STK_LOW_MEMORY
+        *n1 = unpackNormal(m_normals[n  ]);
+        *n2 = unpackNormal(m_normals[n+1]);
+        *n3 = unpackNormal(m_normals[n+2]);
+#else
         *n1 = m_normals[n  ];
         *n2 = m_normals[n+1];
         *n3 = m_normals[n+2];
+#endif
     }   // getNormals
+#ifdef STK_LOW_MEMORY
+    // ------------------------------------------------------------------------
+    static btVector3 unpackNormal(uint32_t packed)
+    {
+        const irr::core::vector3df v = MiniGLM::decompressVector3(packed);
+        return btVector3(v.X, v.Y, v.Z);
+    }
+#endif
     // ------------------------------------------------------------------------
     /** Returns basically the area of the triangle, which is needed when
      *  smoothing the normals. */

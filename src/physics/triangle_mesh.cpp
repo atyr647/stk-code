@@ -32,7 +32,22 @@
 // -----------------------------------------------------------------------------
 /** Constructor: Initialises all data structures with zero.
  */
-TriangleMesh::TriangleMesh(bool can_be_transformed) : m_mesh()
+#ifdef STK_LOW_MEMORY
+// Memory-constrained targets (the N64 port) trade nothing in behaviour for
+// size: vertices stored as 3 floats instead of 4, normals packed into 32 bits
+// (see triangle_mesh.hpp), and a quantised BVH (16-byte nodes instead of 64 --
+// it only culls, the triangle tests stay exact).
+static const bool USE_QUANTIZED_BVH = true;
+#else
+static const bool USE_QUANTIZED_BVH = false;
+#endif
+
+TriangleMesh::TriangleMesh(bool can_be_transformed)
+#ifdef STK_LOW_MEMORY
+            : m_mesh(/*use32bitIndices*/true, /*use4componentVertices*/false)
+#else
+            : m_mesh()
+#endif
 {
     m_body               = NULL;
     m_free_body          = true;
@@ -73,12 +88,27 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
 
     btVector3 normal = (t2-t1).cross(t3-t1);
     normal.normalize();
+#ifdef STK_LOW_MEMORY
+    auto pack = [](const btVector3 &v)
+    {
+        btVector3 u = v.length2() > 0 ? v.normalized() : btVector3(0, 1, 0);
+        return MiniGLM::compressVector3(irr::core::vector3df(u.getX(), u.getY(),
+                                                             u.getZ()));
+    };
+    m_normals.push_back(pack(normal.angle(n1)>stk_config->m_smooth_angle_limit
+                             ? normal : n1));
+    m_normals.push_back(pack(normal.angle(n2)>stk_config->m_smooth_angle_limit
+                             ? normal : n2));
+    m_normals.push_back(pack(normal.angle(n3)>stk_config->m_smooth_angle_limit
+                             ? normal : n3));
+#else
     m_normals.push_back( normal.angle(n1)>stk_config->m_smooth_angle_limit
                          ? normal : n1                                     );
     m_normals.push_back( normal.angle(n2)>stk_config->m_smooth_angle_limit
                          ? normal : n2                                     );
     m_normals.push_back( normal.angle(n3)>stk_config->m_smooth_angle_limit
                          ? normal : n3                                     );
+#endif
     m_mesh.addTriangle(t1, t2, t3);
 
     // Area of triangle ABC
@@ -122,11 +152,11 @@ void TriangleMesh::createCollisionShape(bool create_collision_object, const char
         if (bhv == NULL)
         {
             Log::warn("TriangleMesh", "Failed to load serialized BHV");
-            bhv_triangle_mesh = new btBvhTriangleMeshShape(&m_mesh, false /* useQuantizedAabbCompression */);
+            bhv_triangle_mesh = new btBvhTriangleMeshShape(&m_mesh, USE_QUANTIZED_BVH);
         }
         else
         {
-            bhv_triangle_mesh = new btBvhTriangleMeshShape(&m_mesh, false /* useQuantizedAabbCompression */,
+            bhv_triangle_mesh = new btBvhTriangleMeshShape(&m_mesh, USE_QUANTIZED_BVH,
                                                            false /* buildBvh */);
             bhv_triangle_mesh->setOptimizedBvh( bhv );
         }
@@ -137,7 +167,7 @@ void TriangleMesh::createCollisionShape(bool create_collision_object, const char
     }
     else
     {
-        bhv_triangle_mesh = new btBvhTriangleMeshShape(&m_mesh, false /* useQuantizedAabbCompression */);
+        bhv_triangle_mesh = new btBvhTriangleMeshShape(&m_mesh, USE_QUANTIZED_BVH);
 
         /*
          // code to serialize triangle mesh

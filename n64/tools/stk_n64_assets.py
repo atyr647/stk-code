@@ -139,7 +139,10 @@ def decimate(mesh, target_tris, lock_border=False, road=None,
     # the track model (a floating platform is also a separate piece).
     options = (1 if lock_border else 0) | (PRUNE if allow_sloppy else 0)
     if road is None:
-        err = 1.0
+        # Unlimited error lets Prune delete every component of a mesh; cap
+        # decoration at a quarter of the object's own size, so only small
+        # parts of it can disappear.
+        err = 0.25 if allow_sloppy else 1.0
         if max_error_m is not None:
             bb = mesh.bbox
             extent = max(bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2], 1e-3)
@@ -192,16 +195,29 @@ def decimate(mesh, target_tris, lock_border=False, road=None,
                 per_buf[bi] = idx
     for bi, b in enumerate(bufs):
         if len(per_buf[bi]) < 3:
-            # meshopt removed a whole material buffer (a sliver, usually).
-            # Keep a single triangle-free buffer out of the file instead of an
-            # empty one, which the loader asserts on.
-            per_buf[bi] = None
-            continue
+            # meshopt removed a whole material buffer. Decoration may lose
+            # it (it is usually a sliver); anything karts can touch keeps
+            # it as it was -- a vanished buffer is a hole in the collision
+            # surface.
+            if allow_sloppy:
+                per_buf[bi] = None
+                continue
+            per_buf[bi] = _simplify_alone(b, mesh, max(
+                1, int(b.tri_count * target_tris / max(1, total))))
         _compact(b, per_buf[bi])
+    if all(k is None for k in per_buf):
+        # Never let a mesh vanish entirely: an empty mesh has an unbounded
+        # bounding box, which STK turns into a collision box millions of
+        # units wide (and a quantised BVH spanning it -- which then culls
+        # nothing). Keep the original geometry of the largest buffer.
+        big = max(range(len(bufs)), key=lambda i: len(bufs[i].indices))
+        per_buf[big] = _simplify_alone(bufs[big], mesh, max(
+            1, int(bufs[big].tri_count * target_tris / max(1, total))))
     for sec in mesh.sections:
         sec[:] = [b for b, k in zip(sec, [per_buf[bufs.index(x)] for x in sec])
                   if k is not None]
     mesh.sections = [sec for sec in mesh.sections if sec]
+    assert mesh.tri_count > 0, "decimation emptied a mesh"
     spm.recompute_bbox(mesh)
     return mesh
 
@@ -266,6 +282,17 @@ def make_road_mask(quads, heights, margin=2.0, above=1.5, below=1.0):
             out[ix[inside]] = 1
         return out.tobytes()
     return mask
+
+
+def _simplify_alone(b, mesh, target_tris):
+    """One buffer on its own, topology-preserving and without Prune: it can
+    shrink a buffer as far as its shape allows but never delete it."""
+    pos = bytearray()
+    for v in b.verts:
+        pos += struct.pack("<3f", *v["pos"])
+    out = _run_meshsimplify(pos, b"", [], b.indices, len(b.verts),
+                            target_tris, 0)
+    return out if len(out) >= 3 else list(b.indices)
 
 
 def _compact(b, new_idx):

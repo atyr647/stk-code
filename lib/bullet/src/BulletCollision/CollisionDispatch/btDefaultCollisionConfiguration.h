@@ -38,8 +38,8 @@ struct	btDefaultCollisionConstructionInfo
 #ifdef BULLET_SMALL_MEMORY
 		// Memory-constrained targets (the N64 port): the pools are
 		// preallocated, and fall back to the heap when they run out.
-		m_defaultMaxPersistentManifoldPoolSize(128),
-		m_defaultMaxCollisionAlgorithmPoolSize(128),
+		m_defaultMaxPersistentManifoldPoolSize(32),
+		m_defaultMaxCollisionAlgorithmPoolSize(32),
 #else
 		m_defaultMaxPersistentManifoldPoolSize(4096),
 		m_defaultMaxCollisionAlgorithmPoolSize(4096),

@@ -15,6 +15,19 @@ add_definitions(-D_GLIBCXX_HAS_GTHREADS=1)
 # smaller preallocated Bullet pools (lib/bullet: btDefaultCollisionConfiguration,
 # btAxisSweep3) -- 4.5 MB of manifold pool alone otherwise
 add_definitions(-DBULLET_SMALL_MEMORY)
+# STK's own memory-for-nothing trades (src/physics/triangle_mesh.*)
+add_definitions(-DSTK_LOW_MEMORY)
+# lib/mcpp (track-script preprocessor): its buffers are sized from NBUFF --
+# 64 KB by default, i.e. 320 KB of static data plus 256 KB stack frames. STK's
+# scripts are small files with short lines; mcpp documents 0x1000/0x4000 as
+# valid sizes.
+add_definitions(-DNBUFF=0x2000)
+# lib/irrlicht: switch off loaders/writers nothing on the N64 uses
+# (IrrCompileConfig.h's own NO_* switches). ZIP stays: addons install from it.
+add_definitions(-DNO_IRR_COMPILE_WITH_BMP_LOADER_ -DNO_IRR_COMPILE_WITH_BMP_WRITER_
+                -DNO_IRR_COMPILE_WITH_JPG_WRITER_ -DNO_IRR_COMPILE_WITH_PNG_WRITER_
+                -DNO__IRR_COMPILE_WITH_TAR_ARCHIVE_LOADER_
+                -DNO__IRR_COMPILE_WITH_WAD_ARCHIVE_LOADER_)
 
 add_subdirectory(${STK_N64_DIR}/compat ${CMAKE_BINARY_DIR}/n64compat)
 

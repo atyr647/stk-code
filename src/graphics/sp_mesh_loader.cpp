@@ -762,6 +762,12 @@ void SPMeshLoader::createAnimationData(irr::io::IReadFile* spm)
 // ----------------------------------------------------------------------------
 void SPMeshLoader::convertIrrlicht()
 {
+#if defined(SERVER_ONLY) && defined(STK_LOW_MEMORY)
+    // Irrlicht's joint keyframes only serve to animate a model on screen; a
+    // build without a renderer would keep a second, larger copy of every
+    // kart's animation for nothing.
+    return;
+#endif
     scene::ISkinnedMesh* smesh = dynamic_cast<scene::ISkinnedMesh*>(m_mesh);
     // Only for legacy device
     if (!smesh || m_joints.empty())

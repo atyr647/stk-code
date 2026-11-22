@@ -35,8 +35,12 @@ string(APPEND N64_FLAGS " -DN64 -DLIBDRAGON_PREVIEW=2 -ftrivial-auto-var-init=pa
 set(CMAKE_C_FLAGS_INIT   "${N64_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${N64_FLAGS}")
 set(CMAKE_ASM_FLAGS_INIT "${N64_FLAGS}")
-set(CMAKE_C_FLAGS_MINSIZEREL_INIT   "-Os -DNDEBUG")
-set(CMAKE_CXX_FLAGS_MINSIZEREL_INIT "-Os -DNDEBUG")
+# -Oz: GCC's most size-oriented level; on the N64 code is resident in the
+# same 8 MB as everything else
+# (as cache entries: CMake appends its own "-Os" to *_INIT, and the last -O
+# on a command line wins)
+set(CMAKE_C_FLAGS_MINSIZEREL   "-Oz -DNDEBUG" CACHE STRING "")
+set(CMAKE_CXX_FLAGS_MINSIZEREL "-Oz -DNDEBUG" CACHE STRING "")
 
 # Linking: what n64.mk's %.elf rule does.
 set(CMAKE_EXE_LINKER_FLAGS_INIT
