@@ -9,9 +9,11 @@
  * -D_GLIBCXX_HAS_GTHREADS -- turns the standard threading library back on for
  * every translation unit, without touching STK, libstdc++ or the toolchain.
  *
- * The handful of out-of-line pieces the prebuilt libstdc++.a lacks
- * (std::thread::_M_start_thread, join, condition_variable, call_once's TLS
- * hooks) are in n64/compat/src/gthr_libdragon.cpp.
+ * This header is included by every C++ file that uses <mutex>, so it must not
+ * drag libdragon's headers (and their macros -- n64sys.h redefines srand)
+ * into STK. The kernel objects are therefore opaque here; their layout is
+ * checked against libdragon's kmutex_t/kcond_t in gthr_libdragon.c, which is
+ * the only place the real types are visible.
  *
  * libdragon's kernel is cooperative plus interrupt-driven: threads switch when
  * one blocks, sleeps or yields, or an interrupt wakes a higher-priority one.
@@ -26,57 +28,61 @@
 #define __GTHREAD_HAS_COND 1
 #define _GTHREAD_USE_MUTEX_TIMEDLOCK 0
 
-#include <kernel.h>
-#include <errno.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <time.h>
-#include <sys/time.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* A thread handle is a small control block, not the kthread_t: libdragon's
- * kthread_join() parks the joiner without putting it on any wait list when the
- * target is still running (an assertion at this revision), so threads detach
- * themselves and joining is done with a mutex + condition variable instead.
- * See n64/compat/src/gthr_libdragon.c. */
+/* A thread handle is a small control block, not the kthread_t: see
+ * gthr_libdragon.c for why joins do not go through kthread_join(). */
 typedef struct __stk_n64_thread *__gthread_t;
 typedef unsigned int __gthread_key_t;
 typedef struct { volatile int done; } __gthread_once_t;
-typedef kmutex_t __gthread_mutex_t;
-typedef kmutex_t __gthread_recursive_mutex_t;
-typedef kcond_t __gthread_cond_t;
+/* == libdragon kmutex_t: 8 bytes, zero-initialisable (kernel.h) */
+typedef struct { uint64_t __opaque; } __attribute__((aligned(8))) __gthread_mutex_t;
+typedef __gthread_mutex_t __gthread_recursive_mutex_t;
+/* == libdragon kcond_t: one pointer */
+typedef struct { void *__opaque; } __gthread_cond_t;
 typedef struct timespec __gthread_time_t;
 
-/* kmutex_t / kcond_t may be zero-initialised (kernel.h), which is what makes
- * std::mutex's constexpr constructor possible. Field order: original_pri,
- * flags, owner, counter, waiting. */
-#define __GTHREAD_MUTEX_INIT { 0, KMUTEX_STANDARD, 0, 0, 0 }
+/* kmutex_t is { int8 original_pri:8; uint8 flags:1; ... } -- on this
+ * big-endian target the flags bit is bit 55 of the 64-bit word.
+ * gthr_libdragon.c static-asserts both initialisers. */
+#define __STK_N64_KMUTEX_RECURSIVE_BITS (1ull << 55)
+#define __GTHREAD_MUTEX_INIT { 0 }
 #define __GTHREAD_MUTEX_INIT_FUNCTION __gthread_mutex_init_function
-#define __GTHREAD_RECURSIVE_MUTEX_INIT { 0, KMUTEX_RECURSIVE, 0, 0, 0 }
+#define __GTHREAD_RECURSIVE_MUTEX_INIT { __STK_N64_KMUTEX_RECURSIVE_BITS }
 #define __GTHREAD_RECURSIVE_MUTEX_INIT_FUNCTION __gthread_recursive_mutex_init_function
 #define __GTHREAD_COND_INIT { 0 }
 #define __GTHREAD_COND_INIT_FUNCTION __gthread_cond_init_function
 #define __GTHREAD_ONCE_INIT { 0 }
 #define __GTHREAD_TIME_INIT { 0, 0 }
 
-/* Set by n64_main once kernel_init() has run. Before that the program is
- * single-threaded by construction (static constructors), so locking is a
- * no-op, exactly as with gthr-posix when libpthread is not linked. */
 extern volatile int __stk_n64_threads_active;
-extern kmutex_t __stk_n64_once_mutex;
 
 int __stk_n64_thread_create(__gthread_t *thread, void *(*func)(void *),
                             void *args);
 int __stk_n64_thread_join(__gthread_t thread);
 int __stk_n64_thread_detach(__gthread_t thread);
 __gthread_t __stk_n64_thread_self(void);
+void __stk_n64_thread_yield(void);
+int __stk_n64_once(__gthread_once_t *once, void (*func)(void));
 int __stk_n64_key_create(__gthread_key_t *key, void (*dtor)(void *));
 int __stk_n64_key_delete(__gthread_key_t key);
 void *__stk_n64_key_get(__gthread_key_t key);
 int __stk_n64_key_set(__gthread_key_t key, const void *ptr);
-uint32_t __stk_n64_ticks_until(const struct timespec *abs);
+void __stk_n64_mutex_init(__gthread_mutex_t *m, int recursive);
+void __stk_n64_mutex_lock(__gthread_mutex_t *m);
+int __stk_n64_mutex_trylock(__gthread_mutex_t *m);
+void __stk_n64_mutex_unlock(__gthread_mutex_t *m);
+void __stk_n64_cond_init(__gthread_cond_t *c);
+void __stk_n64_cond_signal(__gthread_cond_t *c);
+void __stk_n64_cond_broadcast(__gthread_cond_t *c);
+void __stk_n64_cond_wait(__gthread_cond_t *c, __gthread_mutex_t *m);
+int __stk_n64_cond_timedwait(__gthread_cond_t *c, __gthread_mutex_t *m,
+                             const struct timespec *abs);
 
 static inline int __gthread_active_p(void) { return __stk_n64_threads_active; }
 
@@ -95,20 +101,9 @@ static inline int __gthread_equal(__gthread_t t1, __gthread_t t2)
 static inline __gthread_t __gthread_self(void)
 { return __stk_n64_thread_self(); }
 static inline int __gthread_yield(void)
-{ if (__stk_n64_threads_active) kthread_yield(); return 0; }
-
+{ __stk_n64_thread_yield(); return 0; }
 static inline int __gthread_once(__gthread_once_t *once, void (*func)(void))
-{
-    if (once->done)
-        return 0;
-    if (__stk_n64_threads_active) kmutex_lock(&__stk_n64_once_mutex);
-    if (!once->done) {
-        func();
-        once->done = 1;
-    }
-    if (__stk_n64_threads_active) kmutex_unlock(&__stk_n64_once_mutex);
-    return 0;
-}
+{ return once->done ? 0 : __stk_n64_once(once, func); }
 
 static inline int __gthread_key_create(__gthread_key_t *key, void (*dtor)(void *))
 { return __stk_n64_key_create(key, dtor); }
@@ -120,49 +115,42 @@ static inline int __gthread_setspecific(__gthread_key_t key, const void *ptr)
 { return __stk_n64_key_set(key, ptr); }
 
 static inline void __gthread_mutex_init_function(__gthread_mutex_t *m)
-{ kmutex_init(m, KMUTEX_STANDARD); }
+{ __stk_n64_mutex_init(m, 0); }
 static inline int __gthread_mutex_destroy(__gthread_mutex_t *m)
 { (void)m; return 0; }
 static inline int __gthread_mutex_lock(__gthread_mutex_t *m)
-{ if (__stk_n64_threads_active) kmutex_lock(m); return 0; }
+{ __stk_n64_mutex_lock(m); return 0; }
 static inline int __gthread_mutex_trylock(__gthread_mutex_t *m)
-{
-    if (!__stk_n64_threads_active) return 0;
-    return kmutex_try_lock(m, 0) ? 0 : EBUSY;
-}
+{ return __stk_n64_mutex_trylock(m); }
 static inline int __gthread_mutex_unlock(__gthread_mutex_t *m)
-{ if (__stk_n64_threads_active) kmutex_unlock(m); return 0; }
+{ __stk_n64_mutex_unlock(m); return 0; }
 
 static inline void __gthread_recursive_mutex_init_function(__gthread_recursive_mutex_t *m)
-{ kmutex_init(m, KMUTEX_RECURSIVE); }
+{ __stk_n64_mutex_init(m, 1); }
 static inline int __gthread_recursive_mutex_destroy(__gthread_recursive_mutex_t *m)
 { (void)m; return 0; }
 static inline int __gthread_recursive_mutex_lock(__gthread_recursive_mutex_t *m)
-{ return __gthread_mutex_lock(m); }
+{ __stk_n64_mutex_lock(m); return 0; }
 static inline int __gthread_recursive_mutex_trylock(__gthread_recursive_mutex_t *m)
-{ return __gthread_mutex_trylock(m); }
+{ return __stk_n64_mutex_trylock(m); }
 static inline int __gthread_recursive_mutex_unlock(__gthread_recursive_mutex_t *m)
-{ return __gthread_mutex_unlock(m); }
+{ __stk_n64_mutex_unlock(m); return 0; }
 
 static inline void __gthread_cond_init_function(__gthread_cond_t *c)
-{ kcond_init(c); }
+{ __stk_n64_cond_init(c); }
 static inline int __gthread_cond_broadcast(__gthread_cond_t *c)
-{ if (__stk_n64_threads_active) kcond_broadcast(c); return 0; }
+{ __stk_n64_cond_broadcast(c); return 0; }
 static inline int __gthread_cond_signal(__gthread_cond_t *c)
-{ if (__stk_n64_threads_active) kcond_signal(c); return 0; }
+{ __stk_n64_cond_signal(c); return 0; }
 static inline int __gthread_cond_wait(__gthread_cond_t *c, __gthread_mutex_t *m)
-{ kcond_wait(c, m); return 0; }
+{ __stk_n64_cond_wait(c, m); return 0; }
 static inline int __gthread_cond_wait_recursive(__gthread_cond_t *c,
                                                 __gthread_recursive_mutex_t *m)
-{ kcond_wait(c, m); return 0; }
+{ __stk_n64_cond_wait(c, m); return 0; }
 static inline int __gthread_cond_timedwait(__gthread_cond_t *c,
                                            __gthread_mutex_t *m,
                                            const __gthread_time_t *abs)
-{
-    uint32_t ticks = __stk_n64_ticks_until(abs);
-    if (ticks == 0) return ETIMEDOUT;
-    return kcond_wait_timeout(c, m, ticks) ? 0 : ETIMEDOUT;
-}
+{ return __stk_n64_cond_timedwait(c, m, abs); }
 static inline int __gthread_cond_destroy(__gthread_cond_t *c)
 { (void)c; return 0; }
 

@@ -212,6 +212,10 @@ if(UNIX AND NOT APPLE AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
     endif()
 endif()
 
+if(N64)
+    include(n64/stk_n64.cmake)
+endif()
+
 # Build the Bullet physics library
 add_subdirectory("${PROJECT_SOURCE_DIR}/lib/bullet")
 include_directories(BEFORE "${PROJECT_SOURCE_DIR}/lib/bullet/src")
@@ -980,4 +984,8 @@ install(FILES data/net.supertuxkart.SuperTuxKart.metainfo.xml DESTINATION share/
 if(MINGW)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/bin/ DESTINATION ${STK_INSTALL_BINARY_DIR}
             FILES_MATCHING PATTERN "*.dll")
+endif()
+
+if(N64)
+    include(n64/stk_n64_target.cmake)
 endif()

@@ -11,10 +11,16 @@
 # stable frame has been captured; 1 if none arrived; 2 if ares refused to start.
 #
 # ARES (default /opt/pak-ares/bin/ares) can be overridden.
+#
+# LOG_UNTIL=<extended regex>: instead of waiting for a stable picture, keep
+# running until the ROM's debug output (ares's log) matches, the deadline
+# passes, or ares exits -- for long headless runs whose screen is static text.
+# Exit 0 on a match, 1 otherwise.
 set -u
 ROM="$1"; OUT="$2"; MAX="${3:-240}"; SETTLE="${4:-3}"
 ARES="${ARES:-/opt/pak-ares/bin/ares}"
 LOG="${OUT%.png}.log"
+rm -f "$OUT" "$LOG"      # never report a previous run's picture
 for t in Xvfb import convert; do
     command -v "$t" >/dev/null || { echo "ares_run: missing $t"; exit 2; }
 done
@@ -31,15 +37,35 @@ for d in $(seq 90 119); do
 done
 [ -n "$DISP" ] || { echo "ares_run: no free X display"; exit 2; }
 
-DISPLAY=:$DISP LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy "$ARES" \
+# stdbuf: ares prints the ROM's debug channel (IS-Viewer) on stdout, which is
+# block-buffered into a file -- a ROM that hangs would lose its last words.
+DISPLAY=:$DISP LIBGL_ALWAYS_SOFTWARE=1 SDL_AUDIODRIVER=dummy stdbuf -oL -eL "$ARES" \
     --system "Nintendo 64" --no-file-prompt --fullscreen \
     --setting Audio/Mute=true "$ROM" > "$LOG" 2>&1 &
 APID=$!
 
-cleanup() { kill -9 $APID 2>/dev/null; kill -9 $XPID 2>/dev/null; }
+cleanup() {
+    kill -TERM $APID 2>/dev/null; sleep 1; kill -9 $APID 2>/dev/null
+    kill -9 $XPID 2>/dev/null
+}
 trap cleanup EXIT
 
 deadline=$(( $(date +%s) + MAX ))
+if [ -n "${LOG_UNTIL:-}" ]; then
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep 5
+        if grep -qE "$LOG_UNTIL" "$LOG" 2>/dev/null; then
+            sleep 3
+            DISPLAY=:$DISP import -window root "$OUT" 2>/dev/null
+            echo "ares_run: log matched /$LOG_UNTIL/"
+            exit 0
+        fi
+        kill -0 $APID 2>/dev/null || { echo "ares_run: ares exited"; exit 1; }
+    done
+    DISPLAY=:$DISP import -window root "$OUT" 2>/dev/null
+    echo "ares_run: deadline reached without /$LOG_UNTIL/"
+    exit 1
+fi
 last=""; stable=0; lit=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
     sleep 3

@@ -20,6 +20,7 @@
 #define HEADER_XML_NODE_HPP
 
 #include <string>
+#include <type_traits>
 #include <map>
 #include <vector>
 
@@ -78,6 +79,22 @@ public:
     int get(const std::string &attribute, int32_t  *value) const;
     int get(const std::string &attribute, uint16_t *value) const;
     int get(const std::string &attribute, uint32_t *value) const;
+    /** Plain int / unsigned int for targets where they are distinct types
+     *  from int32_t / uint32_t (e.g. the N64's mips64-elf newlib, where
+     *  int32_t is long). Where they are the same type -- every PC target --
+     *  this template does not exist, so overload resolution is unchanged. */
+    template<typename T, typename std::enable_if<
+        (std::is_same<T, int>::value || std::is_same<T, unsigned int>::value)
+        && !std::is_same<T, int32_t>::value
+        && !std::is_same<T, uint32_t>::value, int>::type = 0>
+    int get(const std::string &attribute, T *value) const
+    {
+        typename std::conditional<std::is_signed<T>::value,
+                                  int32_t, uint32_t>::type v;
+        int result = get(attribute, &v);
+        if (result) *value = (T)v;
+        return result;
+    }
     int get(const std::string &attribute, int64_t  *value) const;
     int get(const std::string &attribute, uint64_t  *value) const;
     int get(const std::string &attribute, float *value) const;

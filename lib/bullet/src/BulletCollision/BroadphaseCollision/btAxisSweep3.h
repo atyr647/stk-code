@@ -1029,7 +1029,12 @@ class btAxisSweep3 : public btAxisSweep3Internal<unsigned short int>
 {
 public:
 
+#ifdef BULLET_SMALL_MEMORY
+	// Memory-constrained targets (the N64 port): handles are preallocated.
+	btAxisSweep3(const btVector3& worldAabbMin,const btVector3& worldAabbMax, unsigned short int maxHandles = 2048, btOverlappingPairCache* pairCache = 0, bool disableRaycastAccelerator = false);
+#else
 	btAxisSweep3(const btVector3& worldAabbMin,const btVector3& worldAabbMax, unsigned short int maxHandles = 16384, btOverlappingPairCache* pairCache = 0, bool disableRaycastAccelerator = false);
+#endif
 
 };
 

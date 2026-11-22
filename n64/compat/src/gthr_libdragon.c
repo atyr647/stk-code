@@ -2,11 +2,73 @@
  * with a trampoline that runs thread-specific-storage destructors, the TSS
  * key table, and the clock conversion for timed waits. */
 #include <bits/gthr-default.h>
+#include <kernel.h>
+#include <debug.h>
+#include <errno.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
+/* The opaque types in gthr-default.h must be libdragon's, bit for bit. */
+_Static_assert(sizeof(__gthread_mutex_t) == sizeof(kmutex_t), "mutex size");
+_Static_assert(_Alignof(__gthread_mutex_t) >= _Alignof(kmutex_t), "mutex align");
+_Static_assert(sizeof(__gthread_cond_t) == sizeof(kcond_t), "cond size");
+static void __attribute__((constructor)) check_mutex_initialisers(void)
+{
+    /* the static initialisers have to mean what kmutex_init() would set up */
+    kmutex_t std_m, rec_m;
+    kmutex_init(&std_m, KMUTEX_STANDARD);
+    kmutex_init(&rec_m, KMUTEX_RECURSIVE);
+    __gthread_mutex_t a = __GTHREAD_MUTEX_INIT;
+    __gthread_recursive_mutex_t b = __GTHREAD_RECURSIVE_MUTEX_INIT;
+    assertf(!memcmp(&a, &std_m, sizeof a), "__GTHREAD_MUTEX_INIT mismatch");
+    assertf(!memcmp(&b, &rec_m, sizeof b),
+            "__GTHREAD_RECURSIVE_MUTEX_INIT mismatch");
+}
+#define KM(m) ((kmutex_t *)(m))
+#define KC(c) ((kcond_t *)(c))
+
 volatile int __stk_n64_threads_active = 0;
-kmutex_t __stk_n64_once_mutex = __GTHREAD_RECURSIVE_MUTEX_INIT;
+static kmutex_t once_mutex = { .flags = KMUTEX_RECURSIVE };
+
+void __stk_n64_mutex_init(__gthread_mutex_t *m, int recursive)
+{ kmutex_init(KM(m), recursive ? KMUTEX_RECURSIVE : KMUTEX_STANDARD); }
+void __stk_n64_mutex_lock(__gthread_mutex_t *m)
+{ if (__stk_n64_threads_active) kmutex_lock(KM(m)); }
+int __stk_n64_mutex_trylock(__gthread_mutex_t *m)
+{
+    if (!__stk_n64_threads_active) return 0;
+    return kmutex_try_lock(KM(m), 0) ? 0 : EBUSY;
+}
+void __stk_n64_mutex_unlock(__gthread_mutex_t *m)
+{ if (__stk_n64_threads_active) kmutex_unlock(KM(m)); }
+void __stk_n64_cond_init(__gthread_cond_t *c) { kcond_init(KC(c)); }
+void __stk_n64_cond_signal(__gthread_cond_t *c)
+{ if (__stk_n64_threads_active) kcond_signal(KC(c)); }
+void __stk_n64_cond_broadcast(__gthread_cond_t *c)
+{ if (__stk_n64_threads_active) kcond_broadcast(KC(c)); }
+void __stk_n64_cond_wait(__gthread_cond_t *c, __gthread_mutex_t *m)
+{ kcond_wait(KC(c), KM(m)); }
+uint32_t __stk_n64_ticks_until(const struct timespec *abs);
+int __stk_n64_cond_timedwait(__gthread_cond_t *c, __gthread_mutex_t *m,
+                             const struct timespec *abs)
+{
+    uint32_t ticks = __stk_n64_ticks_until(abs);
+    if (ticks == 0) return ETIMEDOUT;
+    return kcond_wait_timeout(KC(c), KM(m), ticks) ? 0 : ETIMEDOUT;
+}
+void __stk_n64_thread_yield(void)
+{ if (__stk_n64_threads_active) kthread_yield(); }
+int __stk_n64_once(__gthread_once_t *once, void (*func)(void))
+{
+    if (__stk_n64_threads_active) kmutex_lock(&once_mutex);
+    if (!once->done) {
+        func();
+        once->done = 1;
+    }
+    if (__stk_n64_threads_active) kmutex_unlock(&once_mutex);
+    return 0;
+}
 
 #ifndef STK_N64_THREAD_STACK
 #define STK_N64_THREAD_STACK (64 * 1024)

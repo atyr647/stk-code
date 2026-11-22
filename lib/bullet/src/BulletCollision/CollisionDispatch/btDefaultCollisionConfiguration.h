@@ -35,8 +35,15 @@ struct	btDefaultCollisionConstructionInfo
 		:m_stackAlloc(0),
 		m_persistentManifoldPool(0),
 		m_collisionAlgorithmPool(0),
+#ifdef BULLET_SMALL_MEMORY
+		// Memory-constrained targets (the N64 port): the pools are
+		// preallocated, and fall back to the heap when they run out.
+		m_defaultMaxPersistentManifoldPoolSize(128),
+		m_defaultMaxCollisionAlgorithmPoolSize(128),
+#else
 		m_defaultMaxPersistentManifoldPoolSize(4096),
 		m_defaultMaxCollisionAlgorithmPoolSize(4096),
+#endif
 		m_customCollisionAlgorithmMaxElementSize(0),
 		m_defaultStackAllocatorSize(0),
 		m_useEpaPenetrationAlgorithm(true)

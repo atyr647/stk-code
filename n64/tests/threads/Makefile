@@ -7,6 +7,7 @@ COMPAT   := ../../compat
 GCC_SRC  ?= $(N64_INST)/build/gcc-16.2.0/libstdc++-v3
 CXXFLAGS += -I$(COMPAT)/include -D_GLIBCXX_HAS_GTHREADS=1
 CFLAGS   += -I$(COMPAT)/include
+LDFLAGS  += --wrap=gettimeofday
 
 all: threads.z64
 

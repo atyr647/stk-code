@@ -315,7 +315,7 @@ int XMLNode::get(const std::string &attribute, int32_t *value) const
     std::string s;
     if(!get(attribute, &s)) return 0;
 
-    if (!StringUtils::parseString<int>(s, value))
+    if (!StringUtils::parseString<int32_t>(s, value))
     {
         Log::warn("[XMLNode]", "WARNING: Expected int but found '%s' for attribute '%s' of node '%s' in file %s",
                     s.c_str(), attribute.c_str(), m_name.c_str(), m_file_name.c_str());
@@ -379,7 +379,7 @@ int XMLNode::get(const std::string &attribute, uint32_t *value) const
     std::string s;
     if(!get(attribute, &s)) return 0;
 
-    if (!StringUtils::parseString<unsigned int>(s, value))
+    if (!StringUtils::parseString<uint32_t>(s, value))
     {
         Log::warn("[XMLNode]", "WARNING: Expected uint but found '%s' for attribute '%s' of node '%s' in file %s",
                     s.c_str(), attribute.c_str(), m_name.c_str(), m_file_name.c_str());

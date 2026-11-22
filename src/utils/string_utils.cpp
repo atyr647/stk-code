@@ -347,7 +347,13 @@ namespace StringUtils
     {
         try
         {
+#ifdef N64
+            // libdragon paths carry a filesystem prefix ("rom:/data"), so
+            // ':' cannot separate a list of directories there.
+            std::vector<std::string> dirs{path};
+#else
             std::vector<std::string> dirs=StringUtils::split(path,':');
+#endif
             for(int i=(int)dirs.size()-1; i>=0; i--)
             {
                 // Remove '/' at the end of paths, since this can cause

@@ -1,0 +1,6 @@
+# Headless AI race (SERVER_ONLY build): 4 karts, 1 lap of Lighthouse.
+--track=lighthouse
+--numkarts=4
+--kart=tux
+--profile-laps=1
+--unlock-all
