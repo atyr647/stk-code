@@ -101,24 +101,26 @@ def main():
     ap.add_argument("--time-tolerance", type=float, default=0.10,
                     help="max relative change in mean finish time")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 2)
+    ap.add_argument("--confirm-runs", type=int, default=6,
+                    help="re-run a track that fails a statistical check "
+                         "(rescues, lap time) until both sides have this "
+                         "many runs, and judge it on all of them: AI races "
+                         "are not reproducible, and tracks where karts "
+                         "already fall off in the original are noisy")
     ap.add_argument("--report")
     a = ap.parse_args()
 
     tracks = a.tracks.split(",") if a.tracks else race_tracks(a.original)
-    jobs = [(t, side, root, i) for t in tracks
-            for side, root in (("original", a.original),
-                               ("downscaled", a.downscaled))
-            for i in range(a.runs)]
     raw = {}
-    with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
-        futs = {ex.submit(race, a.stk, root, t, a.timeout): (t, side)
-                for t, side, root, _ in jobs}
-        for f in concurrent.futures.as_completed(futs):
-            raw.setdefault(futs[f], []).append(f.result())
 
-    report, failures = {}, []
-    print("%-22s %-28s %-28s %s" % ("track", "original", "downscaled", "verdict"))
-    for t in tracks:
+    def run_all(job_list):
+        with concurrent.futures.ThreadPoolExecutor(a.jobs) as ex:
+            futs = {ex.submit(race, a.stk, root, t, a.timeout): (t, side)
+                    for t, side, root in job_list}
+            for f in concurrent.futures.as_completed(futs):
+                raw.setdefault(futs[f], []).append(f.result())
+
+    def judge(t):
         o = summarise(raw[(t, "original")])
         d = summarise(raw[(t, "downscaled")])
         verdict = "ok"
@@ -135,10 +137,31 @@ def main():
                 verdict = "ok (lap time %+.1f%%)" % (100 * dt)
         elif not o.get("finished"):
             verdict = "n/a: original does not finish headless"
+        return o, d, verdict
+
+    sides = (("original", a.original), ("downscaled", a.downscaled))
+    run_all([(t, side, root) for t in tracks for side, root in sides
+             for _ in range(a.runs)])
+    # Statistical failures get more runs before they count
+    retry = [t for t in tracks
+             if judge(t)[2].startswith("FAIL: rescues") or
+                judge(t)[2].startswith("FAIL: lap time")]
+    if retry and a.confirm_runs > a.runs:
+        run_all([(t, side, root) for t in retry for side, root in sides
+                 for _ in range(a.confirm_runs - a.runs)])
+
+    report, failures = {}, []
+    print("%-22s %-28s %-28s %s" % ("track", "original", "downscaled", "verdict"))
+    for t in tracks:
+        o, d, verdict = judge(t)
+        runs = len(raw[(t, "original")])
+        if runs > a.runs:
+            verdict += " [%d runs]" % runs
         fmt = lambda s: ("%.1fs, %.1f resc" % (s["mean_time"], s["rescues_per_race"])
                          if s.get("finished") else "did not finish")
         print("%-22s %-28s %-28s %s" % (t, fmt(o), fmt(d), verdict))
-        report[t] = {"original": o, "downscaled": d, "verdict": verdict}
+        report[t] = {"original": o, "downscaled": d, "verdict": verdict,
+                     "runs": runs}
         if verdict.startswith("FAIL"):
             failures.append(t)
     if a.report:

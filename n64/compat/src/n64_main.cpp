@@ -63,9 +63,12 @@ int main()
     print_heap("before platform init");
     timer_init();
     kernel_init();
+    print_heap("after kernel_init");
     __stk_n64_threads_active = 1;
     dfs_init(DFS_DEFAULT_LOCATION);
+    print_heap("after dfs_init");
     stk_n64_ramfs_init();
+    print_heap("after ramfs init");
     for (const char *d : {"ram:/home", "ram:/home/.config", "ram:/home/.local",
                           "ram:/home/.local/share", "ram:/home/.cache"})
         mkdir(d, 0777);
@@ -80,6 +83,7 @@ int main()
     console_set_render_mode(RENDER_AUTOMATIC);
 #endif
     console_set_debug(true);
+    print_heap("after console init");
 
     printf("[n64] SuperTuxKart for Nintendo 64 (%s RDRAM)\n",
            is_memory_expanded() ? "8 MiB" : "4 MiB");

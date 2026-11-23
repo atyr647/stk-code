@@ -45,6 +45,9 @@ bool FilePageCache::open(const std::string &path, unsigned cache_bytes,
     m_file = fopen(path.c_str(), "rb");
     if (!m_file)
         return false;
+    // The cache is the buffer: each miss is one read of exactly one page
+    // (on the N64, one DMA from ROM)
+    setvbuf(m_file, NULL, _IONBF, 0);
     if (fseek(m_file, 0, SEEK_END) != 0)
         return false;
     long size = ftell(m_file);
