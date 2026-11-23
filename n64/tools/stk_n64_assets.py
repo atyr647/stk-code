@@ -51,8 +51,15 @@ BUDGETS = {
     # walls/barriers next to the road, and every other mesh karts collide with
     "collision_error_m": 0.25,
     "near_road_m": 20.0,
-    # far scenery: largest component (fraction of track extent) prune may drop
-    "far_prune_error": 0.02,
+    # near zone height window around the driveline (metres above / below)
+    "near_above_m": 15.0,
+    "near_below_m": 8.0,
+    # far scenery: shape error, and largest component prune may drop, in
+    # metres. Must stay well under the near zone's size -- far geometry may
+    # move by this much, and a ceiling or cliff that sags into the corridor
+    # becomes a wall the karts crash into (a fraction of the track extent
+    # meant 57 m on cocoa_temple).
+    "far_error_m": 6.0,
     # karts: body + all parts, per kart
     "kart_tris": 500,
     # shared models/ (items, powerups) and library objects: per mesh cap
@@ -162,18 +169,31 @@ def decimate(mesh, target_tris, lock_border=False, road=None,
         extent = max(bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2], 1e-3)
         road_m = road["mask"](pos, off)
         near_m = road["near_mask"](pos, off)
-        lock_near = bytes(a | b for a, b in zip(road_m, near_m))
+        # Holes are topology, not shape: filling a doorway in a flat wall
+        # costs zero geometric error, so no error budget prevents it (it
+        # walled off stk_enterprise's tunnel). Open-edge vertices anywhere
+        # near the driveline never move, in any pass.
+        guard_m = road["guard_mask"](pos, off)
+        border_m = _border_vertices(pos, off, all_idx)
+        keep_holes = bytes(a & b for a, b in zip(border_m, guard_m))
+        # The near zone plus one ring of triangles: a triangle reaching into
+        # the zone cannot be dragged across it from outside.
+        lock_near = _dilate(bytes(a | b for a, b in zip(road_m, near_m)),
+                            all_idx)
+        lock_near = bytes(a | b for a, b in zip(lock_near, keep_holes))
         out = _run_meshsimplify(pos, att, weights, all_idx, off, target_tris,
                                 options | PRUNE, lock=lock_near,
-                                target_error=road["far_error"])
+                                target_error=road["far_error"] / extent)
         # Prune deletes whole small components and ignores vertex locks, so
         # it can take a bridge or a floating platform off the driveline.
         # Put back every piece that touches the near/road zone.
         out = _restore_locked_components(pos, off, all_idx, out, lock_near)
         out = _run_meshsimplify(pos, att, weights, out, off, 0, options,
-                                lock=road_m,
+                                lock=bytes(a | b for a, b in
+                                           zip(road_m, keep_holes)),
                                 target_error=road["near_error"] / extent)
         out = _run_meshsimplify(pos, att, weights, out, off, 0, options,
+                                lock=keep_holes,
                                 target_error=road["error"] / extent)
     per_buf = [[] for _ in bufs]
     for t in range(0, len(out), 3):
@@ -224,6 +244,43 @@ def decimate(mesh, target_tris, lock_border=False, road=None,
     assert mesh.tri_count > 0, "decimation emptied a mesh"
     spm.recompute_bbox(mesh)
     return mesh
+
+
+def _welded_ids(pos, vc):
+    """Vertex -> id shared by all vertices at the same position."""
+    first, ids = {}, []
+    for v in range(vc):
+        ids.append(first.setdefault(bytes(pos[v * 12:v * 12 + 12]), v))
+    return ids
+
+
+def _border_vertices(pos, vc, indices):
+    """1 for vertices on an open edge (an edge with one triangle), with
+    vertices welded by position -- buffers meet at seams, not borders."""
+    ids = _welded_ids(pos, vc)
+    count = {}
+    for t in range(0, len(indices), 3):
+        tri = [ids[indices[t + k]] for k in range(3)]
+        for k in range(3):
+            a, b = tri[k], tri[(k + 1) % 3]
+            e = (a, b) if a < b else (b, a)
+            count[e] = count.get(e, 0) + 1
+    on = set()
+    for (a, b), n in count.items():
+        if n == 1:
+            on.add(a)
+            on.add(b)
+    return bytes(1 if ids[v] in on else 0 for v in range(vc))
+
+
+def _dilate(mask, indices):
+    """Grow a vertex mask by one ring of triangles."""
+    out = bytearray(mask)
+    for t in range(0, len(indices), 3):
+        a, b, c = indices[t:t + 3]
+        if mask[a] or mask[b] or mask[c]:
+            out[a] = out[b] = out[c] = 1
+    return bytes(out)
 
 
 def _components(pos, vc, indices):
@@ -444,7 +501,7 @@ class Pipeline:
         target = max(min(m.tri_count, self.b["min_mesh_tris"]), cap)
         if m.tri_count > target:
             if collides:
-                m = decimate(m, target,
+                m = decimate(m, target, lock_border=True,
                              max_error_m=self.b["collision_error_m"])
             else:
                 m = decimate(m, target, allow_sloppy=True)
@@ -536,10 +593,15 @@ class Pipeline:
         road = {"mask": make_road_mask(quads, heights),
                 "near_mask": make_road_mask(quads, heights,
                                             margin=self.b["near_road_m"],
-                                            above=15.0, below=8.0),
+                                            above=self.b["near_above_m"],
+                                            below=self.b["near_below_m"]),
+                "guard_mask": make_road_mask(
+                    quads, heights, margin=2 * self.b["near_road_m"],
+                    above=2 * self.b["near_above_m"],
+                    below=2 * self.b["near_below_m"]),
                 "error": self.b["road_error_m"],
                 "near_error": self.b["collision_error_m"],
-                "far_error": self.b["far_prune_error"]} if quads else None
+                "far_error": self.b["far_error_m"]} if quads else None
         main_model = self._main_model(td)
         out_unique = out_scene = 0
         for p, c in local.items():
@@ -605,7 +667,9 @@ class Pipeline:
             # error capped (driveable surfaces at road accuracy)
             err = (self.b["road_error_m"] if p in usage.driveable
                    else self.b["collision_error_m"])
-            return decimate(m, target, max_error_m=err)
+            # lock_border: openings (doorways, arches) are free to close
+            # under any error budget, see decimate()
+            return decimate(m, target, max_error_m=err, lock_border=True)
         return decimate(m, target, allow_sloppy=True)
 
     def _main_model(self, td):
