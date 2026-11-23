@@ -137,11 +137,19 @@ void CMountPointReader::buildDirectory()
 		if (!list->isDirectory(i))
 		{
 			addItem(full, list->getFileOffset(i), list->getFileSize(i), false, RealFileNames.size());
+#ifdef STK_LOW_MEMORY
+			// The real name is Path + the entry's name: rebuilt when opened
+			// (see createAndOpenFile) unless names were case-folded.
+			if (IgnoreCase)
+#endif
 			RealFileNames.push_back(list->getFullFileName(i));
 		}
 		else
 		{
 			const io::path rel = list->getFileName(i);
+#ifdef STK_LOW_MEMORY
+			if (IgnoreCase)
+#endif
 			RealFileNames.push_back(list->getFullFileName(i));
 
 			io::path pwd  = Parent->getWorkingDirectory();
@@ -168,6 +176,10 @@ IReadFile* CMountPointReader::createAndOpenFile(u32 index)
 	if (index >= Files.size())
 		return 0;
 
+#ifdef STK_LOW_MEMORY
+	if (!IgnoreCase)
+		return createReadFile(Path + Files[index].FullName);
+#endif
 	return createReadFile(RealFileNames[Files[index].ID]);
 }
 

@@ -59,7 +59,32 @@ static void print_heap(const char *when)
 #if !defined(STK_N64_CONSOLE) && !defined(STK_N64_SCREEN_LOG)
 static int write_debug(char *data, unsigned int len)
 {
+#ifdef STK_N64_LOG_HEAP
+    // Each log line starts with the heap in use: STK's log becomes a
+    // memory timeline.
+    static bool line_start = true;
+    unsigned int from = 0;
+    for (unsigned int i = 0; i < len; i++)
+    {
+        if (line_start)
+        {
+            heap_stats_t hs;
+            sys_get_heap_stats(&hs);
+            debugf("[%4d K] ", hs.used / 1024);
+            line_start = false;
+        }
+        if (data[i] == '\n')
+        {
+            debugf("%.*s", (int)(i + 1 - from), data + from);
+            from = i + 1;
+            line_start = true;
+        }
+    }
+    if (from < len)
+        debugf("%.*s", (int)(len - from), data + from);
+#else
     debugf("%.*s", (int)len, data);
+#endif
     return (int)len;
 }
 #endif

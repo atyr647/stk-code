@@ -146,6 +146,8 @@ static int trampoline(void *arg)
     return 0;
 }
 
+void stk_n64_note_thread(int stack_bytes);   /* n64_diag.cpp */
+
 int __stk_n64_thread_create(__gthread_t *thread, void *(*func)(void *),
                             void *args)
 {
@@ -157,6 +159,7 @@ int __stk_n64_thread_create(__gthread_t *thread, void *(*func)(void *),
     kcond_init(&t->finished);
     t->func = func; t->args = args;
     *thread = t;      /* before the thread can possibly run */
+    stk_n64_note_thread(STK_N64_THREAD_STACK);
     if (!kthread_new("stk", STK_N64_THREAD_STACK, 0, trampoline, t)) {
         free(t);
         return EAGAIN;

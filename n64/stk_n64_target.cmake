@@ -11,9 +11,11 @@ target_sources(supertuxkart PRIVATE ${STK_N64_DIR}/compat/src/n64_main.cpp
 # --wrap targets are invisible to LTO's symbol resolution: keep this file out
 set_source_files_properties(${STK_N64_DIR}/compat/src/n64_diag.cpp PROPERTIES
     COMPILE_OPTIONS "-fno-lto")
-if(STK_N64_SCREEN_LOG)
-    target_compile_definitions(supertuxkart PRIVATE STK_N64_SCREEN_LOG=1)
-endif()
+foreach(opt STK_N64_SCREEN_LOG STK_N64_CONSOLE STK_N64_LOG_HEAP)
+    if(${opt})
+        target_compile_definitions(supertuxkart PRIVATE ${opt}=1)
+    endif()
+endforeach()
 target_link_libraries(supertuxkart stk_n64_compat)
 target_link_options(supertuxkart PRIVATE
     "-Wl,-Map=${CMAKE_BINARY_DIR}/supertuxkart.map")

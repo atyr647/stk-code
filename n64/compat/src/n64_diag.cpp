@@ -17,6 +17,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <new>
+#include <backtrace.h>
 #include <typeinfo>
 #include <cxxabi.h>
 
@@ -50,9 +52,28 @@ static void on_terminate()
     halt("std::terminate", 0);
 }
 
+// Out of memory: say how much was asked for, how full the heap is, and
+// who asked, before std::bad_alloc unwinds all of that away.
+static void on_out_of_memory()
+{
+    static bool reported = false;
+    if (!reported)
+    {
+        reported = true;
+        heap_stats_t hs;
+        sys_get_heap_stats(&hs);
+        debugf("[n64] out of memory: heap %d KiB used of %d KiB (%d free)\n",
+               hs.used / 1024, hs.total / 1024, hs.free / 1024);
+        debug_backtrace();
+    }
+    std::set_new_handler(nullptr);
+    throw std::bad_alloc();
+}
+
 __attribute__((constructor(200))) static void n64_diag_init()
 {
     std::set_terminate(on_terminate);
+    std::set_new_handler(on_out_of_memory);
 #ifdef STK_N64_SCREEN_LOG
     debug_init_isviewer();
     console_init();
@@ -98,3 +119,15 @@ extern "C" __attribute__((used)) void *__wrap___cxa_get_exception_ptr(void *e)
 extern "C" void __real___cxa_call_unexpected(void *);
 extern "C" __attribute__((used, noreturn)) void __wrap___cxa_call_unexpected(void *e)
 { CANON(e); __real___cxa_call_unexpected(e); __builtin_unreachable(); }
+
+// Every thread's stack comes out of the heap on the N64 (on desktop systems
+// it does not): say who starts one.
+extern "C" void stk_n64_note_thread(int stack_bytes)
+{
+    static int count = 0;
+    heap_stats_t hs;
+    sys_get_heap_stats(&hs);
+    debugf("[n64] thread %d starting (%d KiB stack; heap %d KiB used)\n",
+           ++count, stack_bytes / 1024, hs.used / 1024);
+    debug_backtrace();
+}

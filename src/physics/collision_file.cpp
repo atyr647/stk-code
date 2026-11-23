@@ -144,7 +144,12 @@ CollisionFile* CollisionFile::open(const std::string &path,
                                                         <= h.m_file_size;
     if (!ok)
     {
-        Log::warn("CollisionFile", "Ignoring malformed '%s'.", path.c_str());
+        if (h.m_byte_order == 0x04030201)
+            Log::warn("CollisionFile", "Ignoring '%s': written for the other "
+                      "byte order.", path.c_str());
+        else
+            Log::warn("CollisionFile", "Ignoring malformed '%s'.",
+                      path.c_str());
         delete cf;
         return NULL;
     }
