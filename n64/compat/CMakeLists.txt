@@ -16,8 +16,12 @@ endforeach()
 set_source_files_properties(${LIBSTDCXX_THREAD_SOURCES} PROPERTIES
     COMPILE_FLAGS "-std=gnu++17 -I${GCC_LIBSTDCXX_SRC}/libsupc++ -w")
 
+# fpu_emu.c writes $f20-$f31 directly; it must not use them itself
+set_source_files_properties(src/fpu_emu.c PROPERTIES COMPILE_FLAGS
+    "-DSTK_N64_FPU_EMU_FIXED_REGS -ffixed-$f20 -ffixed-$f21 -ffixed-$f22 -ffixed-$f23 -ffixed-$f24 -ffixed-$f25 -ffixed-$f26 -ffixed-$f27 -ffixed-$f28 -ffixed-$f29 -ffixed-$f30 -ffixed-$f31")
 add_library(stk_n64_compat STATIC
     src/gthr_libdragon.c
+    src/fpu_emu.c
     src/clock_libdragon.cpp
     src/net_stub.c
     src/ramfs.c

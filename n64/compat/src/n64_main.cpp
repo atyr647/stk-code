@@ -65,10 +65,13 @@ static int write_debug(char *data, unsigned int len)
 #endif
 
 extern "C" void stk_n64_fpu_setup(void);
+extern "C" void stk_n64_fpu_emu_init(void);
+extern "C" uint32_t stk_n64_fpu_emulated(void);
 
 int main()
 {
     stk_n64_fpu_setup();
+    stk_n64_fpu_emu_init();
     debug_init_isviewer();
     debug_init_usblog();
     debugf("[n64] main reached (static initialisation done)\n");
@@ -120,6 +123,8 @@ int main()
     int r = stk_main((int)args.size(), argv.data());
 
     printf("[n64] stk_main returned %d\n", r);
+    printf("[n64] FPU instructions completed in software: %u\n",
+           (unsigned)stk_n64_fpu_emulated());
     print_heap("at exit");
     while (true)
         kthread_sleep(TICKS_FROM_MS(1000));

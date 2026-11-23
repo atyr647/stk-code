@@ -407,18 +407,30 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
                                const Material* m)
 {
     btVector3 normal = (t2-t1).cross(t3-t1);
-    normal.normalize();
 #ifdef STK_LOW_MEMORY
+    // A zero-area triangle has no face normal. Desktop code gets NaN from
+    // normalize(), every angle comparison with it is false, and each
+    // corner keeps its vertex normal; produce exactly that without the NaN
+    // (the N64's FPU cannot compute with NaN: it raises an unmaskable
+    // exception).
+    const bool degenerate = normal.length2() == 0;
+    if (!degenerate)
+        normal.normalize();
     auto pack = [](const btVector3 &v)
     {
         btVector3 u = v.length2() > 0 ? v.normalized() : btVector3(0, 1, 0);
         return MiniGLM::compressVector3(irr::core::vector3df(u.getX(), u.getY(),
                                                              u.getZ()));
     };
-    const uint32_t packed[3] = {
-        pack(normal.angle(n1)>stk_config->m_smooth_angle_limit ? normal : n1),
-        pack(normal.angle(n2)>stk_config->m_smooth_angle_limit ? normal : n2),
-        pack(normal.angle(n3)>stk_config->m_smooth_angle_limit ? normal : n3) };
+    const float limit = stk_config->m_smooth_angle_limit;
+    // (same for a zero vertex normal: angle() would be NaN)
+    auto use_face = [&](const btVector3 &n)
+    {
+        return !degenerate && n.length2() != 0 && normal.angle(n) > limit;
+    };
+    const uint32_t packed[3] = { pack(use_face(n1) ? normal : n1),
+                                 pack(use_face(n2) ? normal : n2),
+                                 pack(use_face(n3) ? normal : n3) };
 #ifdef STK_ROM_COLLISION
     const btVector3 *t[3] = { &t1, &t2, &t3 };
     for (int k = 0; k < 3; k++)
@@ -442,6 +454,7 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
     m_normals.push_back(packed[1]);
     m_normals.push_back(packed[2]);
 #else
+    normal.normalize();
     m_triangleIndex2Material.push_back(m);
     m_normals.push_back( normal.angle(n1)>stk_config->m_smooth_angle_limit
                          ? normal : n1                                     );
