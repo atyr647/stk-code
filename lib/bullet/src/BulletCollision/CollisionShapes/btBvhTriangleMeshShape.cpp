@@ -105,6 +105,21 @@ void	btBvhTriangleMeshShape::performRaycast (btTriangleCallback* callback, const
 				
 		virtual void processNode(int nodeSubPart, int nodeTriangleIndex)
 		{
+#ifdef BULLET_SMALL_MEMORY
+			{
+				btVector3 v[3];
+				if (m_meshInterface->getTriangleVertices(nodeSubPart, nodeTriangleIndex, v))
+				{
+					// same arithmetic as the indexed path below
+					const btVector3& s = m_meshInterface->getScaling();
+					btVector3 tri[3];
+					for (int j = 2; j >= 0; j--)
+						tri[j] = btVector3(v[j].getX()*s.getX(), v[j].getY()*s.getY(), v[j].getZ()*s.getZ());
+					m_callback->processTriangle(tri, nodeSubPart, nodeTriangleIndex);
+					return;
+				}
+			}
+#endif
 			btVector3 m_triangle[3];
 			const unsigned char *vertexbase;
 			int numverts;
@@ -174,6 +189,21 @@ void	btBvhTriangleMeshShape::performConvexcast (btTriangleCallback* callback, co
 				
 		virtual void processNode(int nodeSubPart, int nodeTriangleIndex)
 		{
+#ifdef BULLET_SMALL_MEMORY
+			{
+				btVector3 v[3];
+				if (m_meshInterface->getTriangleVertices(nodeSubPart, nodeTriangleIndex, v))
+				{
+					// same arithmetic as the indexed path below
+					const btVector3& s = m_meshInterface->getScaling();
+					btVector3 tri[3];
+					for (int j = 2; j >= 0; j--)
+						tri[j] = btVector3(v[j].getX()*s.getX(), v[j].getY()*s.getY(), v[j].getZ()*s.getZ());
+					m_callback->processTriangle(tri, nodeSubPart, nodeTriangleIndex);
+					return;
+				}
+			}
+#endif
 			btVector3 m_triangle[3];
 			const unsigned char *vertexbase;
 			int numverts;
@@ -255,6 +285,21 @@ void	btBvhTriangleMeshShape::processAllTriangles(btTriangleCallback* callback,co
 				
 		virtual void processNode(int nodeSubPart, int nodeTriangleIndex)
 		{
+#ifdef BULLET_SMALL_MEMORY
+			{
+				btVector3 v[3];
+				if (m_meshInterface->getTriangleVertices(nodeSubPart, nodeTriangleIndex, v))
+				{
+					// same arithmetic as the indexed path below
+					const btVector3& s = m_meshInterface->getScaling();
+					btVector3 tri[3];
+					for (int j = 2; j >= 0; j--)
+						tri[j] = btVector3(v[j].getX()*s.getX(), v[j].getY()*s.getY(), v[j].getZ()*s.getZ());
+					m_callback->processTriangle(tri, nodeSubPart, nodeTriangleIndex);
+					return;
+				}
+			}
+#endif
 			const unsigned char *vertexbase;
 			int numverts;
 			PHY_ScalarType type;

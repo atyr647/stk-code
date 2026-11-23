@@ -68,6 +68,9 @@
 #include "physics/physical_object.hpp"
 #include "physics/physics.hpp"
 #include "physics/triangle_mesh.hpp"
+
+#include <cstdlib>
+#include <cstring>
 #include "race/race_manager.hpp"
 #include "scriptengine/script_engine.hpp"
 #include "tracks/arena_graph.hpp"
@@ -931,6 +934,21 @@ void Track::createPhysicsModel(unsigned int main_track_count,
         m_track_mesh->createCollisionShape();
     else
         m_track_mesh->createPhysicalBody(m_friction);
+#ifdef STK_ROM_COLLISION
+    // Host builds: STK_COLLISION_EXPORT=1 writes the collision file for the
+    // data set (=exit: and quits, for batch generation).
+    const char *export_mode = getenv("STK_COLLISION_EXPORT");
+    if (export_mode && !for_height_map)
+    {
+        const std::string path = m_root + "n64_collision.bin";
+        if (!m_track_mesh->exportCollisionFile(path))
+            Log::fatal("Track", "Could not write '%s'.", path.c_str());
+        Log::info("Track", "Wrote '%s' (%d triangles).", path.c_str(),
+                  m_track_mesh->getNumTriangles());
+        if (strcmp(export_mode, "exit") == 0)
+            exit(0);
+    }
+#endif
     main_loop->renderGUI(5585);
     if (m_gfx_effect_mesh)
         m_gfx_effect_mesh->createCollisionShape();
@@ -1280,6 +1298,12 @@ bool Track::loadMainTrack(const XMLNode &root)
 
     m_track_mesh      = new TriangleMesh(/*can_be_transformed*/false);
     m_gfx_effect_mesh = new TriangleMesh(/*can_be_transformed*/false);
+#ifdef STK_ROM_COLLISION
+    // Track collision from the file generated for this data set, if any
+    // (see physics/collision_file.hpp). Exporting builds it in RAM instead.
+    if (!getenv("STK_COLLISION_EXPORT"))
+        m_track_mesh->useCollisionFile(m_root + "n64_collision.bin");
+#endif
 
     const XMLNode *track_node = root.getNode("track");
     std::string model_name;

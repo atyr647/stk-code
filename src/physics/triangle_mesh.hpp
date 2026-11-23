@@ -23,6 +23,7 @@
 #include <vector>
 #include "btBulletDynamicsCommon.h"
 
+#include "physics/collision_file.hpp"
 #include "physics/user_pointer.hpp"
 #ifdef STK_LOW_MEMORY
 #include "mini_glm.hpp"
@@ -199,6 +200,18 @@ private:
     std::vector<float>          m_p1p2p3;
 #endif
 
+#ifdef STK_ROM_COLLISION
+    /** Hash of the triangle stream (see collision_file.hpp), and the
+     *  materials in the order they first appear in it. */
+    CollisionHash                 m_hash;
+    std::vector<const Material*>  m_hash_materials;
+    /** If set, all collision data is read from this file and addTriangle
+     *  only hashes. */
+    CollisionFile                *m_rom;
+    unsigned int                  m_rom_triangles;
+    unsigned int hashMaterial(const Material *m);
+#endif
+
     /** If the rigid body can be transformed (which means that normalising
      *  the normals need to update the vertices and normals used according
      *  to the current transform of the body. */
@@ -249,7 +262,34 @@ public:
     const btRigidBody *getBody() const { return m_body; }
     // ------------------------------------------------------------------------
     const Material* getMaterial(int n) const
-                                          {return m_triangleIndex2Material[n];}
+    {
+#ifdef STK_ROM_COLLISION
+        if (m_rom)
+            return m_hash_materials[m_rom->readMaterial(n)];
+#endif
+        return m_triangleIndex2Material[n];
+    }
+    // ------------------------------------------------------------------------
+    int getNumTriangles() const
+    {
+#ifdef STK_ROM_COLLISION
+        if (m_rom)
+            return (int)m_rom->getHeader().m_num_triangles;
+#endif
+        return m_mesh.getNumTriangles();
+    }
+#ifdef STK_ROM_COLLISION
+    // ------------------------------------------------------------------------
+    /** Serve this mesh from a collision file if it exists and is valid; the
+     *  triangles added afterwards are only hashed and must reproduce it. */
+    bool useCollisionFile(const std::string &path);
+    /** Write the collision built in RAM to a file (host builds). */
+    bool exportCollisionFile(const std::string &path) const;
+    bool verifyCollisionFile(const std::string &path,
+                             const std::vector<uint32_t> &order) const;
+    bool isFromCollisionFile() const { return m_rom != NULL; }
+    const CollisionFile* getCollisionFile() const { return m_rom; }
+#endif
     // ------------------------------------------------------------------------
     const btCollisionShape &getCollisionShape() const
                                           { return *m_collision_shape; }
@@ -266,6 +306,13 @@ public:
     void getTriangle(unsigned int indx, btVector3 *p1, btVector3 *p2,
                      btVector3 *p3) const
     {
+#ifdef STK_ROM_COLLISION
+        if (m_rom)
+        {
+            m_rom->readTriangle(indx, p1, p2, p3);
+            return;
+        }
+#endif
 #ifdef STK_LOW_MEMORY
         m_mesh.getTriangle(indx, p1, p2, p3);
 #else
@@ -283,6 +330,17 @@ public:
     void getNormals(unsigned int indx, btVector3 *n1,
                     btVector3 *n2, btVector3 *n3) const
     {
+#ifdef STK_ROM_COLLISION
+        if (m_rom)
+        {
+            uint32_t packed[3];
+            m_rom->readNormals(indx, packed);
+            *n1 = unpackNormal(packed[0]);
+            *n2 = unpackNormal(packed[1]);
+            *n3 = unpackNormal(packed[2]);
+            return;
+        }
+#endif
         assert(indx < m_triangleIndex2Material.size());
         unsigned int n = indx*3;
 #ifdef STK_LOW_MEMORY
@@ -323,7 +381,7 @@ public:
     // ------------------------------------------------------------------------
     void copyFrom(const TriangleMesh& tm)
     {
-        for (int i = 0; i < tm.m_mesh.getNumTriangles(); i++)
+        for (int i = 0; i < tm.getNumTriangles(); i++)
         {
             btVector3 v[6];
             tm.getTriangle(i, v, v + 1, v + 2);

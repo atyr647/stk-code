@@ -26,6 +26,7 @@
 #include "utils/time.hpp"
 
 #include "btBulletDynamicsCommon.h"
+#include "BulletCollision/NarrowPhaseCollision/btRaycastCallback.h"
 
 #include <algorithm>
 #include <cstring>
@@ -175,6 +176,10 @@ TriangleMesh::TriangleMesh(bool can_be_transformed)
     m_collision_shape  = NULL;
     m_collision_object = NULL;
     m_user_pointer.set(this);
+#ifdef STK_ROM_COLLISION
+    m_rom              = NULL;
+    m_rom_triangles    = 0;
+#endif
 }   // TriangleMesh
 
 // -----------------------------------------------------------------------------
@@ -183,7 +188,211 @@ TriangleMesh::TriangleMesh(bool can_be_transformed)
 TriangleMesh::~TriangleMesh()
 {
     removeAll();
+#ifdef STK_ROM_COLLISION
+    if (m_rom)
+    {
+        const FilePageCache &c = m_rom->getCache();
+        Log::info("TriangleMesh", "Collision cache (%u KB, %u B pages): "
+                  "%u hits, %u misses (%.2f%%), %.1f MB read.",
+                  c.getCacheBytes() / 1024, c.getPageSize(), c.getHits(),
+                  c.getMisses(), 100.0 * c.getMisses() /
+                  std::max(1u, c.getHits() + c.getMisses()),
+                  double(c.getMisses()) * c.getPageSize() / 1048576.0);
+    }
+    delete m_rom;
+#endif
 }   // ~TriangleMesh
+
+#ifdef STK_ROM_COLLISION
+// -----------------------------------------------------------------------------
+unsigned int TriangleMesh::hashMaterial(const Material *m)
+{
+    for (unsigned int i = 0; i < m_hash_materials.size(); i++)
+    {
+        if (m_hash_materials[i] == m)
+            return i;
+    }
+    m_hash_materials.push_back(m);
+    return (unsigned int)m_hash_materials.size() - 1;
+}   // hashMaterial
+
+// -----------------------------------------------------------------------------
+bool TriangleMesh::useCollisionFile(const std::string &path)
+{
+    assert(m_rom == NULL && m_triangleIndex2Material.size() == 0);
+    m_rom = CollisionFile::open(path);
+    if (m_rom)
+    {
+        Log::info("TriangleMesh", "Collision from '%s': %u triangles.",
+                  path.c_str(), m_rom->getHeader().m_num_triangles);
+    }
+    return m_rom != NULL;
+}   // useCollisionFile
+
+// -----------------------------------------------------------------------------
+bool TriangleMesh::exportCollisionFile(const std::string &path) const
+{
+    const btBvhTriangleMeshShape *shape =
+        dynamic_cast<const btBvhTriangleMeshShape*>(m_collision_shape);
+    if (m_rom || !shape || m_mesh.getIndexedMeshArray().size() != 1)
+        return false;
+    std::vector<const Material*> order;
+    std::vector<uint16_t> materials;
+    for (size_t i = 0; i < m_triangleIndex2Material.size(); i++)
+    {
+        const Material *m = m_triangleIndex2Material[i];
+        size_t k = std::find(order.begin(), order.end(), m) - order.begin();
+        if (k == order.size())
+            order.push_back(m);
+        materials.push_back((uint16_t)k);
+    }
+    auto record = [&](uint32_t i, CollisionTriangle *t)
+    {
+        btVector3 p[3];
+        getTriangle(i, p, p + 1, p + 2);
+        for (int k = 0; k < 3; k++)
+        {
+            t->m_vertices[3 * k    ] = (float)p[k].getX();
+            t->m_vertices[3 * k + 1] = (float)p[k].getY();
+            t->m_vertices[3 * k + 2] = (float)p[k].getZ();
+            t->m_normals[k] = m_normals[3 * i + k];
+        }
+        t->m_material = materials[i];
+        t->m_padding = 0;
+    };
+    std::vector<uint32_t> file_order;
+    if (!CollisionFile::write(path, m_hash.get(), *shape,
+                              (unsigned)m_triangleIndex2Material.size(),
+                              (unsigned)order.size(), record, &file_order))
+        return false;
+    return verifyCollisionFile(path, file_order);
+}   // exportCollisionFile
+
+// -----------------------------------------------------------------------------
+namespace
+{
+    struct RayHits : public btTriangleRaycastCallback
+    {
+        std::vector<float> m_out;
+        RayHits(const btVector3 &from, const btVector3 &to)
+            : btTriangleRaycastCallback(from, to) {}
+        virtual btScalar reportHit(const btVector3 &n, btScalar fraction,
+                                   int part, int triangle)
+        {
+            const float v[6] = { (float)part, (float)triangle,
+                                 (float)fraction, (float)n.getX(),
+                                 (float)n.getY(), (float)n.getZ() };
+            m_out.insert(m_out.end(), v, v + 6);
+            return fraction;
+        }
+    };
+    struct BoxHits : public btTriangleCallback
+    {
+        std::vector<float> m_out;
+        virtual void processTriangle(btVector3 *t, int part, int triangle)
+        {
+            m_out.push_back((float)part);
+            m_out.push_back((float)triangle);
+            for (int i = 0; i < 3; i++)
+                for (int k = 0; k < 3; k++)
+                    m_out.push_back((float)t[i][k]);
+        }
+    };
+}   // anonymous namespace
+
+// -----------------------------------------------------------------------------
+/** Checks that a just-written collision file reproduces this mesh exactly:
+ *  per-triangle data, and Bullet's answers to raycasts and AABB queries
+ *  spread over the whole mesh. */
+bool TriangleMesh::verifyCollisionFile(const std::string &path,
+                                   const std::vector<uint32_t> &order) const
+{
+    CollisionFile *rom = CollisionFile::open(path);
+    if (!rom)
+        return false;
+    btBvhTriangleMeshShape *ram =
+        dynamic_cast<btBvhTriangleMeshShape*>(m_collision_shape);
+    btBvhTriangleMeshShape file(rom, true, false);
+    file.setOptimizedBvh(rom->getBvh());
+    unsigned bad = 0;
+    const unsigned n = (unsigned)m_triangleIndex2Material.size();
+    if (order.size() != n)
+        bad++;
+    for (unsigned f = 0; f < n && order.size() == n; f++)
+    {
+        // file triangle f is mesh triangle order[f]
+        const unsigned i = order[f];
+        btVector3 a[3], b[3];
+        getTriangle(i, a, a + 1, a + 2);
+        rom->readTriangle(f, b, b + 1, b + 2);
+        uint32_t normals[3];
+        rom->readNormals(f, normals);
+        for (int k = 0; k < 3; k++)
+        {
+            if (a[k] != b[k] || normals[k] != m_normals[3 * i + k])
+                bad++;
+        }
+        if (m_hash_materials[rom->readMaterial(f)] !=
+            m_triangleIndex2Material[i])
+            bad++;
+    }
+    // Bullet reports file numbering for the file shape: map it back
+    auto remap = [&order](std::vector<float> *v, size_t stride)
+    {
+        for (size_t k = 1; k < v->size(); k += stride)
+            (*v)[k] = (float)order[(size_t)(*v)[k]];
+    };
+    if (ram->getLocalAabbMin() != file.getLocalAabbMin() ||
+        ram->getLocalAabbMax() != file.getLocalAabbMax())
+        bad++;
+    const btVector3 lo = ram->getLocalAabbMin(), hi = ram->getLocalAabbMax();
+    uint32_t seed = 12345;
+    auto rnd = [&seed]() {
+        seed = seed * 1664525u + 1013904223u;
+        return (seed >> 8) * (1.0f / 16777216.0f);
+    };
+    auto point = [&]() {
+        return btVector3(lo.getX() + rnd() * (hi.getX() - lo.getX()),
+                         lo.getY() + rnd() * (hi.getY() - lo.getY()),
+                         lo.getZ() + rnd() * (hi.getZ() - lo.getZ()));
+    };
+    unsigned hits = 0;
+    for (int r = 0; r < 20000; r++)
+    {
+        // mostly short downward rays (wheels), some long arbitrary ones
+        btVector3 from = point(), to;
+        if (r % 4)
+            to = from + btVector3(rnd() - 0.5f, -3.0f - 20.0f * rnd(),
+                                  rnd() - 0.5f);
+        else
+            to = point();
+        RayHits h1(from, to), h2(from, to);
+        ram->performRaycast(&h1, from, to);
+        file.performRaycast(&h2, from, to);
+        remap(&h2.m_out, 6);
+        hits += !h1.m_out.empty();
+        if (h1.m_out != h2.m_out)
+            bad++;
+    }
+    for (int q = 0; q < 5000; q++)
+    {
+        const btVector3 c = point();
+        const btVector3 e(0.5f + 2 * rnd(), 0.5f + 2 * rnd(),
+                          0.5f + 2 * rnd());
+        BoxHits b1, b2;
+        ram->processAllTriangles(&b1, c - e, c + e);
+        file.processAllTriangles(&b2, c - e, c + e);
+        remap(&b2.m_out, 11);
+        if (b1.m_out != b2.m_out)
+            bad++;
+    }
+    Log::info("TriangleMesh", "Verified '%s': %u triangles, 20000 rays "
+              "(%u hit), 5000 boxes: %u mismatches.", path.c_str(), n, hits,
+              bad);
+    delete rom;
+    return bad == 0;
+}   // verifyCollisionFile
+#endif
 
 // -----------------------------------------------------------------------------
 /** Adds a triangle to the bullet mesh. It also stores the material used for
@@ -198,8 +407,6 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
                                const btVector3 &n3,
                                const Material* m)
 {
-    m_triangleIndex2Material.push_back(m);
-
     btVector3 normal = (t2-t1).cross(t3-t1);
     normal.normalize();
 #ifdef STK_LOW_MEMORY
@@ -209,13 +416,34 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
         return MiniGLM::compressVector3(irr::core::vector3df(u.getX(), u.getY(),
                                                              u.getZ()));
     };
-    m_normals.push_back(pack(normal.angle(n1)>stk_config->m_smooth_angle_limit
-                             ? normal : n1));
-    m_normals.push_back(pack(normal.angle(n2)>stk_config->m_smooth_angle_limit
-                             ? normal : n2));
-    m_normals.push_back(pack(normal.angle(n3)>stk_config->m_smooth_angle_limit
-                             ? normal : n3));
+    const uint32_t packed[3] = {
+        pack(normal.angle(n1)>stk_config->m_smooth_angle_limit ? normal : n1),
+        pack(normal.angle(n2)>stk_config->m_smooth_angle_limit ? normal : n2),
+        pack(normal.angle(n3)>stk_config->m_smooth_angle_limit ? normal : n3) };
+#ifdef STK_ROM_COLLISION
+    const btVector3 *t[3] = { &t1, &t2, &t3 };
+    for (int k = 0; k < 3; k++)
+    {
+        m_hash.add((float)t[k]->getX());
+        m_hash.add((float)t[k]->getY());
+        m_hash.add((float)t[k]->getZ());
+    }
+    for (int k = 0; k < 3; k++)
+        m_hash.add(packed[k]);
+    m_hash.add((uint32_t)hashMaterial(m));
+    if (m_rom)
+    {
+        // Served from the collision file: only check it is the same mesh
+        m_rom_triangles++;
+        return;
+    }
+#endif
+    m_triangleIndex2Material.push_back(m);
+    m_normals.push_back(packed[0]);
+    m_normals.push_back(packed[1]);
+    m_normals.push_back(packed[2]);
 #else
+    m_triangleIndex2Material.push_back(m);
     m_normals.push_back( normal.angle(n1)>stk_config->m_smooth_angle_limit
                          ? normal : n1                                     );
     m_normals.push_back( normal.angle(n2)>stk_config->m_smooth_angle_limit
@@ -241,6 +469,34 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
  */
 void TriangleMesh::createCollisionShape(bool create_collision_object, const char* serialized_bhv)
 {
+#ifdef STK_ROM_COLLISION
+    if (m_rom)
+    {
+        if (m_rom_triangles != m_rom->getHeader().m_num_triangles ||
+            m_hash.get() != m_rom->getHash() ||
+            m_hash_materials.size() != m_rom->getHeader().m_num_materials)
+        {
+            Log::fatal("TriangleMesh", "'%s' does not match this track "
+                       "(%u triangles, file has %u): regenerate the data.",
+                       m_rom->getPath().c_str(), m_rom_triangles,
+                       m_rom->getHeader().m_num_triangles);
+        }
+        btBvhTriangleMeshShape *shape =
+            new btBvhTriangleMeshShape(m_rom, /*quantized*/true,
+                                       /*buildBvh*/false);
+        shape->setOptimizedBvh(m_rom->getBvh());
+        m_collision_shape = shape;
+        m_collision_shape->setUserPointer(&m_user_pointer);
+        if (create_collision_object)
+        {
+            m_collision_object = new btCollisionObject();
+            btTransform bt;
+            bt.setIdentity();
+            m_collision_object->setWorldTransform(bt);
+        }
+        return;
+    }
+#endif
     if(m_triangleIndex2Material.size()==0)
     {
         m_collision_shape  = NULL;
@@ -536,7 +792,7 @@ bool TriangleMesh::castRay(const btVector3 &from, const btVector3 &to,
     {
         *xyz      = ray_callback.m_hitPointWorld;
         xyz->setW(0.0f);
-        *material = m_triangleIndex2Material[index];
+        *material = getMaterial(index);
 
         if(normal)
         {

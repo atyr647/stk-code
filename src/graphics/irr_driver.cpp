@@ -122,7 +122,8 @@
 
 #if (  IRRLICHT_VERSION_MAJOR < 1                   || \
        IRRLICHT_VERSION_MINOR < 7                   || \
-      _IRR_MATERIAL_MAX_TEXTURES_ < 8               || \
+      (_IRR_MATERIAL_MAX_TEXTURES_ < 8 &&              \
+       !defined(STK_LOW_MEMORY))                    || \
       ( !defined(_IRR_COMPILE_WITH_OPENGL_) &&         \
         !defined(SERVER_ONLY)               &&         \
         !defined(_IRR_COMPILE_WITH_OGLES2_)       ) || \

@@ -2,262 +2,274 @@
  "abyss": {
   "downscaled": {
    "finished": true,
-   "mean_time": 88.12,
+   "mean_time": 86.58,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 88.02,
+   "mean_time": 87.3,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +0.1%)"
+  "verdict": "ok (lap time -0.8%)"
  },
  "black_forest": {
   "downscaled": {
-   "finished": false
+   "finished": true,
+   "mean_time": 177.87,
+   "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 178.91,
+   "mean_time": 174.56,
    "rescues_per_race": 0
   },
-  "verdict": "FAIL: does not finish"
+  "verdict": "ok (lap time +1.9%)"
  },
  "candela_city": {
   "downscaled": {
-   "finished": false
+   "finished": true,
+   "mean_time": 71.9,
+   "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 72.56,
+   "mean_time": 70.23,
    "rescues_per_race": 0
   },
-  "verdict": "FAIL: does not finish"
+  "verdict": "ok (lap time +2.4%)"
  },
  "cocoa_temple": {
   "downscaled": {
-   "finished": false
+   "finished": true,
+   "mean_time": 80.03,
+   "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 79.35,
-   "rescues_per_race": 0.5
+   "mean_time": 76.72,
+   "rescues_per_race": 0
   },
-  "verdict": "FAIL: does not finish"
+  "verdict": "ok (lap time +4.3%)"
  },
  "cornfield_crossing": {
   "downscaled": {
-   "finished": false
-  },
-  "original": {
    "finished": true,
-   "mean_time": 87.82,
-   "rescues_per_race": 0
-  },
-  "verdict": "FAIL: does not finish"
- },
- "fortmagma": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 74.76,
+   "mean_time": 87.9,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 72.59,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +3.0%)"
- },
- "gran_paradiso_island": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 96.82,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 92.23,
-   "rescues_per_race": 0.5
-  },
-  "verdict": "ok (lap time +5.0%)"
- },
- "hacienda": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 80.29,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 78.67,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +2.1%)"
- },
- "lighthouse": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 57.12,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 56.93,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +0.3%)"
- },
- "mines": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 81.37,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 77.64,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +4.8%)"
- },
- "minigolf": {
-  "downscaled": {
-   "finished": false
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 51.51,
-   "rescues_per_race": 0
-  },
-  "verdict": "FAIL: does not finish"
- },
- "olivermath": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 33.21,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 33.38,
+   "mean_time": 88.36,
    "rescues_per_race": 0
   },
   "verdict": "ok (lap time -0.5%)"
  },
- "ravenbridge_mansion": {
+ "fortmagma": {
   "downscaled": {
    "finished": true,
-   "mean_time": 93.77,
+   "mean_time": 73.9,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 93.24,
+   "mean_time": 71.41,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +0.6%)"
+  "verdict": "ok (lap time +3.5%)"
+ },
+ "gran_paradiso_island": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 95.01,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 93.1,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time +2.1%)"
+ },
+ "hacienda": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 77.47,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 78.23,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time -1.0%)"
+ },
+ "lighthouse": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 56.79,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 55.94,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time +1.5%)"
+ },
+ "mines": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 77.61,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 79.73,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time -2.7%)"
+ },
+ "minigolf": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 53.14,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 52.21,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time +1.8%)"
+ },
+ "olivermath": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 32.26,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 33.99,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time -5.1%)"
+ },
+ "ravenbridge_mansion": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 92.81,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 93.78,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time -1.0%)"
  },
  "sandtrack": {
   "downscaled": {
    "finished": true,
-   "mean_time": 81.4,
+   "mean_time": 80.76,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 81.22,
+   "mean_time": 81.24,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +0.2%)"
+  "verdict": "ok (lap time -0.6%)"
  },
  "scotland": {
   "downscaled": {
    "finished": true,
-   "mean_time": 85.24,
+   "mean_time": 79.9,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 79.66,
+   "mean_time": 78.58,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +7.0%)"
+  "verdict": "ok (lap time +1.7%)"
  },
  "snowmountain": {
   "downscaled": {
    "finished": true,
-   "mean_time": 77.4,
+   "mean_time": 76.73,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 77.45,
+   "mean_time": 76.88,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -0.1%)"
+  "verdict": "ok (lap time -0.2%)"
  },
  "snowtuxpeak": {
   "downscaled": {
    "finished": true,
-   "mean_time": 65.46,
+   "mean_time": 65.39,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 65.54,
+   "mean_time": 63.5,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -0.1%)"
+  "verdict": "ok (lap time +3.0%)"
  },
  "stk_enterprise": {
   "downscaled": {
-   "finished": false
+   "finished": true,
+   "mean_time": 96.15,
+   "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 93.98,
+   "mean_time": 97.77,
    "rescues_per_race": 0
   },
-  "verdict": "FAIL: does not finish"
+  "verdict": "ok (lap time -1.7%)"
  },
  "volcano_island": {
   "downscaled": {
    "finished": true,
-   "mean_time": 139.48,
+   "mean_time": 142.48,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 142.24,
+   "mean_time": 142.81,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -1.9%)"
+  "verdict": "ok (lap time -0.2%)"
  },
  "xr591": {
   "downscaled": {
    "finished": true,
-   "mean_time": 80.67,
-   "rescues_per_race": 0
+   "mean_time": 85.42,
+   "rescues_per_race": 6
   },
   "original": {
    "finished": true,
    "mean_time": 84.42,
-   "rescues_per_race": 3.5
+   "rescues_per_race": 2.5
   },
-  "verdict": "ok (lap time -4.4%)"
+  "verdict": "FAIL: rescues 2.5 -> 6.0"
  },
  "zengarden": {
   "downscaled": {
    "finished": true,
-   "mean_time": 46.9,
+   "mean_time": 47.7,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 45.9,
+   "mean_time": 46.95,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +2.2%)"
+  "verdict": "ok (lap time +1.6%)"
  }
 }

@@ -1,16 +1,4 @@
 {
- "audio": {
-  "music": {
-   "files": 39,
-   "ogg_bytes": 70123427,
-   "wav64_bytes": 14078786
-  },
-  "sfx": {
-   "files": 68,
-   "ogg_bytes": 5567832,
-   "wav64_bytes": 741937
-  }
- },
  "budgets": {
   "anim_tol_loc_m": 0.03,
   "anim_tol_rot_rad": 0.07,
@@ -18,12 +6,14 @@
   "audio_rate": 22050,
   "collision_error_m": 0.25,
   "crowded_texture_count": 90,
-  "far_prune_error": 0.02,
+  "far_error_m": 6.0,
   "kart_tris": 500,
   "library_ratio": 0.12,
   "min_mesh_tris": 12,
   "model_tris": 160,
   "music_codec": "ulc",
+  "near_above_m": 15.0,
+  "near_below_m": 8.0,
   "near_road_m": 20.0,
   "road_error_m": 0.03,
   "sfx_codec": "ulc",
@@ -39,28 +29,28 @@
    "src_animation_bytes": 182663,
    "src_tris": 8286,
    "texture_bytes_ci4": 28672,
-   "tris": 1416
+   "tris": 1437
   },
   "amanda": {
    "animation_bytes": 13100,
    "src_animation_bytes": 13100,
    "src_tris": 5328,
    "texture_bytes_ci4": 22528,
-   "tris": 514
+   "tris": 526
   },
   "beastie": {
    "animation_bytes": 685756,
    "src_animation_bytes": 1835020,
    "src_tris": 20036,
    "texture_bytes_ci4": 83968,
-   "tris": 2174
+   "tris": 2185
   },
   "emule": {
    "animation_bytes": 200789,
    "src_animation_bytes": 235637,
    "src_tris": 8977,
    "texture_bytes_ci4": 18944,
-   "tris": 645
+   "tris": 677
   },
   "gavroche": {
    "animation_bytes": 15910,
@@ -74,49 +64,49 @@
    "src_animation_bytes": 113737,
    "src_tris": 12034,
    "texture_bytes_ci4": 34816,
-   "tris": 501
+   "tris": 515
   },
   "hexley": {
    "animation_bytes": 30705,
    "src_animation_bytes": 35515,
    "src_tris": 13351,
    "texture_bytes_ci4": 39424,
-   "tris": 1655
+   "tris": 1665
   },
   "kiki": {
    "animation_bytes": 151335,
    "src_animation_bytes": 166651,
    "src_tris": 16884,
    "texture_bytes_ci4": 21504,
-   "tris": 1115
+   "tris": 1139
   },
   "konqi": {
    "animation_bytes": 687734,
    "src_animation_bytes": 1489004,
    "src_tris": 17828,
    "texture_bytes_ci4": 38912,
-   "tris": 2087
+   "tris": 2099
   },
   "nolok": {
    "animation_bytes": 55798,
    "src_animation_bytes": 56560,
    "src_tris": 5046,
    "texture_bytes_ci4": 24704,
-   "tris": 1512
+   "tris": 1516
   },
   "pidgin": {
    "animation_bytes": 17729,
    "src_animation_bytes": 19135,
    "src_tris": 12788,
    "texture_bytes_ci4": 19584,
-   "tris": 3442
+   "tris": 3447
   },
   "puffy": {
    "animation_bytes": 83269,
    "src_animation_bytes": 83269,
    "src_tris": 6264,
    "texture_bytes_ci4": 13312,
-   "tris": 1676
+   "tris": 1690
   },
   "sara_the_racer": {
    "animation_bytes": 300761,
@@ -137,131 +127,131 @@
    "src_animation_bytes": 13065,
    "src_tris": 2917,
    "texture_bytes_ci4": 14848,
-   "tris": 649
+   "tris": 655
   },
   "tux": {
    "animation_bytes": 35451,
    "src_animation_bytes": 39303,
    "src_tris": 6238,
    "texture_bytes_ci4": 20480,
-   "tris": 501
+   "tris": 502
   },
   "wilber": {
    "animation_bytes": 52380,
    "src_animation_bytes": 55506,
    "src_tris": 12811,
    "texture_bytes_ci4": 14848,
-   "tris": 924
+   "tris": 930
   },
   "xue": {
    "animation_bytes": 46360,
    "src_animation_bytes": 69448,
    "src_tris": 3314,
    "texture_bytes_ci4": 12800,
-   "tris": 533
+   "tris": 537
   }
  },
  "totals": {},
  "tracks": {
   "abyss": {
    "kind": "race",
-   "local_ratio": 0.05718,
+   "local_ratio": 0.02703,
    "missing": [],
-   "scene_tris": 42211,
-   "src_unique_tris": 130713,
+   "scene_tris": 89023,
+   "src_unique_tris": 134595,
    "texture_bytes_ci4": 83720,
    "textures": 43,
-   "unique_tris": 29233
+   "unique_tris": 75060
   },
   "alien_signal": {
    "kind": "arena",
-   "local_ratio": 0.07372,
+   "local_ratio": 0.06164,
    "missing": [],
-   "scene_tris": 35364,
-   "src_unique_tris": 114062,
+   "scene_tris": 44975,
+   "src_unique_tris": 114389,
    "texture_bytes_ci4": 90120,
    "textures": 52,
-   "unique_tris": 21539
+   "unique_tris": 28935
   },
   "ancient_colosseum_labyrinth": {
    "kind": "arena",
-   "local_ratio": 0.08881,
+   "local_ratio": 0.04761,
    "missing": [],
-   "scene_tris": 35888,
-   "src_unique_tris": 83219,
+   "scene_tris": 39323,
+   "src_unique_tris": 87198,
    "texture_bytes_ci4": 157824,
    "textures": 93,
-   "unique_tris": 20082
+   "unique_tris": 23928
   },
   "arena_candela_city": {
    "kind": "arena",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 52352,
-   "src_unique_tris": 63561,
+   "scene_tris": 62364,
+   "src_unique_tris": 64615,
    "texture_bytes_ci4": 163840,
    "textures": 97,
-   "unique_tris": 26541
+   "unique_tris": 28681
   },
   "battleisland": {
    "kind": "arena",
-   "local_ratio": 0.3699,
+   "local_ratio": 0.35719,
    "missing": [],
-   "scene_tris": 14358,
-   "src_unique_tris": 23955,
+   "scene_tris": 19020,
+   "src_unique_tris": 24258,
    "texture_bytes_ci4": 61696,
    "textures": 34,
-   "unique_tris": 11588
+   "unique_tris": 11719
   },
   "black_forest": {
    "kind": "race",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 148530,
-   "src_unique_tris": 313983,
+   "scene_tris": 170731,
+   "src_unique_tris": 314432,
    "texture_bytes_ci4": 194608,
    "textures": 164,
-   "unique_tris": 99222
+   "unique_tris": 128021
   },
   "candela_city": {
    "kind": "race",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 33120,
-   "src_unique_tris": 105814,
+   "scene_tris": 85284,
+   "src_unique_tris": 106715,
    "texture_bytes_ci4": 158720,
    "textures": 93,
-   "unique_tris": 9053
+   "unique_tris": 58185
   },
   "cave": {
    "kind": "arena",
    "local_ratio": 0.53443,
    "missing": [],
-   "scene_tris": 10075,
+   "scene_tris": 10076,
    "src_unique_tris": 16832,
    "texture_bytes_ci4": 29824,
    "textures": 16,
-   "unique_tris": 8997
+   "unique_tris": 8998
   },
   "cocoa_temple": {
    "kind": "race",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 70760,
-   "src_unique_tris": 92978,
+   "scene_tris": 122820,
+   "src_unique_tris": 93969,
    "texture_bytes_ci4": 139136,
    "textures": 81,
-   "unique_tris": 26180
+   "unique_tris": 65780
   },
   "cornfield_crossing": {
    "kind": "race",
-   "local_ratio": 0.04092,
+   "local_ratio": 0.02625,
    "missing": [],
-   "scene_tris": 26323,
-   "src_unique_tris": 88239,
+   "scene_tris": 72110,
+   "src_unique_tris": 88772,
    "texture_bytes_ci4": 159360,
    "textures": 88,
-   "unique_tris": 13994
+   "unique_tris": 56436
   },
   "endcutscene": {
    "kind": "cutscene",
@@ -287,11 +277,11 @@
    "kind": "race",
    "local_ratio": 0.63548,
    "missing": [],
-   "scene_tris": 8106,
+   "scene_tris": 12299,
    "src_unique_tris": 14250,
    "texture_bytes_ci4": 104704,
    "textures": 35,
-   "unique_tris": 7446
+   "unique_tris": 11591
   },
   "gplose": {
    "kind": "cutscene",
@@ -305,43 +295,43 @@
   },
   "gpwin": {
    "kind": "cutscene",
-   "local_ratio": 0.63148,
+   "local_ratio": 0.5876,
    "missing": [],
-   "scene_tris": 11637,
-   "src_unique_tris": 13810,
+   "scene_tris": 13056,
+   "src_unique_tris": 14385,
    "texture_bytes_ci4": 56960,
    "textures": 35,
-   "unique_tris": 8999
+   "unique_tris": 9000
   },
   "gran_paradiso_island": {
    "kind": "race",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 62969,
-   "src_unique_tris": 114611,
+   "scene_tris": 115420,
+   "src_unique_tris": 115422,
    "texture_bytes_ci4": 168200,
    "textures": 112,
-   "unique_tris": 26274
+   "unique_tris": 70611
   },
   "hacienda": {
    "kind": "race",
-   "local_ratio": 0.63376,
+   "local_ratio": 0.63268,
    "missing": [],
-   "scene_tris": 12930,
-   "src_unique_tris": 13966,
+   "scene_tris": 15885,
+   "src_unique_tris": 13980,
    "texture_bytes_ci4": 128584,
    "textures": 59,
-   "unique_tris": 7797
+   "unique_tris": 10765
   },
   "hole_drop": {
    "kind": "soccer",
    "local_ratio": 0.62264,
    "missing": [],
-   "scene_tris": 9952,
+   "scene_tris": 10124,
    "src_unique_tris": 14448,
    "texture_bytes_ci4": 65664,
    "textures": 21,
-   "unique_tris": 9682
+   "unique_tris": 9854
   },
   "icy_soccer_field": {
    "kind": "soccer",
@@ -377,141 +367,141 @@
    "kind": "arena",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 53675,
-   "src_unique_tris": 62229,
+   "scene_tris": 65411,
+   "src_unique_tris": 62764,
    "texture_bytes_ci4": 151688,
    "textures": 88,
-   "unique_tris": 24605
+   "unique_tris": 28635
   },
   "lasdunassoccer": {
    "kind": "soccer",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 51537,
-   "src_unique_tris": 53560,
+   "scene_tris": 58442,
+   "src_unique_tris": 54033,
    "texture_bytes_ci4": 158080,
    "textures": 83,
-   "unique_tris": 20378
+   "unique_tris": 24580
   },
   "lighthouse": {
    "kind": "race",
-   "local_ratio": 0.11828,
+   "local_ratio": 0.11797,
    "missing": [],
-   "scene_tris": 15149,
-   "src_unique_tris": 49620,
+   "scene_tris": 24150,
+   "src_unique_tris": 49635,
    "texture_bytes_ci4": 111744,
    "textures": 46,
-   "unique_tris": 15196
+   "unique_tris": 24155
   },
   "mines": {
    "kind": "race",
-   "local_ratio": 0.14051,
+   "local_ratio": 0.13986,
    "missing": [],
-   "scene_tris": 23264,
-   "src_unique_tris": 62600,
+   "scene_tris": 34810,
+   "src_unique_tris": 62640,
    "texture_bytes_ci4": 118424,
    "textures": 44,
-   "unique_tris": 20130
+   "unique_tris": 31628
   },
   "minigolf": {
    "kind": "race",
    "local_ratio": 0.74185,
    "missing": [],
-   "scene_tris": 13808,
+   "scene_tris": 17557,
    "src_unique_tris": 14712,
    "texture_bytes_ci4": 79360,
    "textures": 32,
-   "unique_tris": 6956
+   "unique_tris": 10705
   },
   "oasis": {
    "kind": "soccer",
    "local_ratio": 0.06953,
    "missing": [],
-   "scene_tris": 23146,
+   "scene_tris": 23292,
    "src_unique_tris": 129245,
    "texture_bytes_ci4": 59520,
    "textures": 30,
-   "unique_tris": 23146
+   "unique_tris": 23292
   },
   "olivermath": {
    "kind": "race",
-   "local_ratio": 0.33881,
+   "local_ratio": 0.33689,
    "missing": [],
-   "scene_tris": 5406,
-   "src_unique_tris": 25776,
+   "scene_tris": 22722,
+   "src_unique_tris": 25825,
    "texture_bytes_ci4": 68608,
    "textures": 36,
-   "unique_tris": 2315
+   "unique_tris": 19601
   },
   "overworld": {
    "kind": "internal",
-   "local_ratio": 0.20797,
+   "local_ratio": 0.20645,
    "missing": [],
-   "scene_tris": 23057,
-   "src_unique_tris": 42769,
+   "scene_tris": 29551,
+   "src_unique_tris": 42817,
    "texture_bytes_ci4": 105608,
    "textures": 112,
-   "unique_tris": 13839
+   "unique_tris": 20157
   },
   "pumpkin_park": {
    "kind": "arena",
    "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 19746,
-   "src_unique_tris": 94774,
+   "scene_tris": 28943,
+   "src_unique_tris": 95615,
    "texture_bytes_ci4": 113536,
    "textures": 64,
-   "unique_tris": 20885
+   "unique_tris": 25659
   },
   "ravenbridge_mansion": {
    "kind": "race",
-   "local_ratio": 0.02767,
+   "local_ratio": 0.02266,
    "missing": [],
-   "scene_tris": 31426,
-   "src_unique_tris": 118060,
+   "scene_tris": 88475,
+   "src_unique_tris": 118614,
    "texture_bytes_ci4": 145792,
    "textures": 81,
-   "unique_tris": 26854
+   "unique_tris": 78219
   },
   "sandtrack": {
    "kind": "race",
-   "local_ratio": 0.67144,
+   "local_ratio": 0.67022,
    "missing": [],
-   "scene_tris": 14453,
-   "src_unique_tris": 13284,
+   "scene_tris": 17605,
+   "src_unique_tris": 13300,
    "texture_bytes_ci4": 58888,
    "textures": 24,
-   "unique_tris": 6926
+   "unique_tris": 9854
   },
   "scotland": {
    "kind": "race",
-   "local_ratio": 0.14081,
+   "local_ratio": 0.13218,
    "missing": [],
-   "scene_tris": 8401,
-   "src_unique_tris": 33700,
+   "scene_tris": 19923,
+   "src_unique_tris": 33948,
    "texture_bytes_ci4": 122880,
    "textures": 66,
-   "unique_tris": 10898
+   "unique_tris": 22254
   },
   "snowmountain": {
    "kind": "race",
-   "local_ratio": 0.44693,
+   "local_ratio": 0.44541,
    "missing": [],
-   "scene_tris": 15811,
-   "src_unique_tris": 19841,
+   "scene_tris": 19220,
+   "src_unique_tris": 19870,
    "texture_bytes_ci4": 73736,
    "textures": 32,
-   "unique_tris": 7081
+   "unique_tris": 10273
   },
   "snowtuxpeak": {
    "kind": "race",
    "local_ratio": 1.0,
    "missing": [],
-   "scene_tris": 7650,
+   "scene_tris": 7663,
    "src_unique_tris": 6709,
    "texture_bytes_ci4": 60424,
    "textures": 24,
-   "unique_tris": 6011
+   "unique_tris": 6028
   },
   "soccer_field": {
    "kind": "soccer",
@@ -535,73 +525,73 @@
   },
   "stk_enterprise": {
    "kind": "race",
-   "local_ratio": 0.20345,
+   "local_ratio": 0.20332,
    "missing": [],
-   "scene_tris": 19811,
-   "src_unique_tris": 44002,
+   "scene_tris": 34433,
+   "src_unique_tris": 44008,
    "texture_bytes_ci4": 135688,
    "textures": 67,
-   "unique_tris": 19423
+   "unique_tris": 33937
   },
   "temple": {
    "kind": "arena",
-   "local_ratio": 0.38466,
+   "local_ratio": 0.0,
    "missing": [],
-   "scene_tris": 23646,
-   "src_unique_tris": 20440,
+   "scene_tris": 34026,
+   "src_unique_tris": 20834,
    "texture_bytes_ci4": 67472,
    "textures": 38,
-   "unique_tris": 8144
+   "unique_tris": 7890
   },
   "tutorial": {
    "kind": "internal",
    "local_ratio": 1.0,
    "missing": [],
-   "scene_tris": 6200,
+   "scene_tris": 6556,
    "src_unique_tris": 6506,
    "texture_bytes_ci4": 77056,
    "textures": 42,
-   "unique_tris": 5480
+   "unique_tris": 5844
   },
   "volcano_island": {
    "kind": "race",
-   "local_ratio": 0.21901,
+   "local_ratio": 0.21355,
    "missing": [],
-   "scene_tris": 9988,
-   "src_unique_tris": 38639,
+   "scene_tris": 34977,
+   "src_unique_tris": 38847,
    "texture_bytes_ci4": 129152,
    "textures": 72,
-   "unique_tris": 6181
+   "unique_tris": 31057
   },
   "xr591": {
    "kind": "race",
    "local_ratio": 0.4289,
    "missing": [],
-   "scene_tris": 9613,
+   "scene_tris": 16514,
    "src_unique_tris": 23322,
    "texture_bytes_ci4": 134352,
    "textures": 33,
-   "unique_tris": 9613
+   "unique_tris": 16514
   },
   "xr_soccer": {
    "kind": "soccer",
    "local_ratio": 0.24357,
    "missing": [],
-   "scene_tris": 9796,
+   "scene_tris": 9956,
    "src_unique_tris": 36946,
    "texture_bytes_ci4": 73984,
    "textures": 26,
-   "unique_tris": 9796
+   "unique_tris": 9956
   },
   "zengarden": {
    "kind": "race",
-   "local_ratio": 0.61946,
+   "local_ratio": 0.61604,
    "missing": [],
-   "scene_tris": 9518,
-   "src_unique_tris": 15620,
+   "scene_tris": 12545,
+   "src_unique_tris": 15650,
    "texture_bytes_ci4": 149568,
    "textures": 44,
-   "unique_tris": 7869
+   "unique_tris": 10670
   }
  }
 }

@@ -21,6 +21,21 @@ subject to the following restrictions:
 
 #define RAYAABB2
 
+#ifdef BULLET_SMALL_MEMORY
+// Stackless walks over an external node source: the node is fetched into a
+// local copy each step and only the index advances.
+#define BT_WALK_ROOT(startIndex) \
+	btQuantizedBvhNode externalNode; \
+	const btQuantizedBvhNode* rootNode = m_externalNodes ? &externalNode : &m_quantizedContiguousNodes[startIndex];
+#define BT_WALK_FETCH() if (m_externalNodes) m_externalNodes->fetchNode(curIndex, externalNode)
+#define BT_WALK_ADVANCE(n) if (!m_externalNodes) rootNode += (n)
+#else
+#define BT_WALK_ROOT(startIndex) \
+	const btQuantizedBvhNode* rootNode = &m_quantizedContiguousNodes[startIndex];
+#define BT_WALK_FETCH()
+#define BT_WALK_ADVANCE(n) rootNode += (n)
+#endif
+
 btQuantizedBvh::btQuantizedBvh() : 
 					m_bulletVersion(BT_BULLET_VERSION),
 					m_useQuantization(false), 
@@ -28,6 +43,9 @@ btQuantizedBvh::btQuantizedBvh() :
 					m_traversalMode(TRAVERSAL_STACKLESS)
 					//m_traversalMode(TRAVERSAL_RECURSIVE)
 					,m_subtreeHeaderCount(0) //PCK: add this line
+#ifdef BULLET_SMALL_MEMORY
+					,m_externalNodes(0)
+#endif
 {
 	m_bvhAabbMin.setValue(-SIMD_INFINITY,-SIMD_INFINITY,-SIMD_INFINITY);
 	m_bvhAabbMax.setValue(SIMD_INFINITY,SIMD_INFINITY,SIMD_INFINITY);
@@ -547,7 +565,7 @@ void	btQuantizedBvh::walkStacklessQuantizedTreeAgainstRay(btNodeOverlapCallback*
 	int subTreeSize = endNodeIndex - startNodeIndex;
 	(void)subTreeSize;
 
-	const btQuantizedBvhNode* rootNode = &m_quantizedContiguousNodes[startNodeIndex];
+	BT_WALK_ROOT(startNodeIndex)
 	int escapeIndex;
 	
 	bool isLeafNode;
@@ -585,6 +603,7 @@ void	btQuantizedBvh::walkStacklessQuantizedTreeAgainstRay(btNodeOverlapCallback*
 
 	while (curIndex < endNodeIndex)
 	{
+		BT_WALK_FETCH();
 
 //#define VISUALLY_ANALYZE_BVH 1
 #ifdef VISUALLY_ANALYZE_BVH
@@ -650,12 +669,12 @@ void	btQuantizedBvh::walkStacklessQuantizedTreeAgainstRay(btNodeOverlapCallback*
 		//PCK: unsigned instead of bool
 		if ((rayBoxOverlap != 0) || isLeafNode)
 		{
-			rootNode++;
+			BT_WALK_ADVANCE(1);
 			curIndex++;
 		} else
 		{
 			escapeIndex = rootNode->getEscapeIndex();
-			rootNode += escapeIndex;
+			BT_WALK_ADVANCE(escapeIndex);
 			curIndex += escapeIndex;
 		}
 	}
@@ -673,7 +692,7 @@ void	btQuantizedBvh::walkStacklessQuantizedTree(btNodeOverlapCallback* nodeCallb
 	int subTreeSize = endNodeIndex - startNodeIndex;
 	(void)subTreeSize;
 
-	const btQuantizedBvhNode* rootNode = &m_quantizedContiguousNodes[startNodeIndex];
+	BT_WALK_ROOT(startNodeIndex)
 	int escapeIndex;
 	
 	bool isLeafNode;
@@ -682,6 +701,7 @@ void	btQuantizedBvh::walkStacklessQuantizedTree(btNodeOverlapCallback* nodeCallb
 
 	while (curIndex < endNodeIndex)
 	{
+		BT_WALK_FETCH();
 
 //#define VISUALLY_ANALYZE_BVH 1
 #ifdef VISUALLY_ANALYZE_BVH
@@ -715,12 +735,12 @@ void	btQuantizedBvh::walkStacklessQuantizedTree(btNodeOverlapCallback* nodeCallb
 		//PCK: unsigned instead of bool
 		if ((aabbOverlap != 0) || isLeafNode)
 		{
-			rootNode++;
+			BT_WALK_ADVANCE(1);
 			curIndex++;
 		} else
 		{
 			escapeIndex = rootNode->getEscapeIndex();
-			rootNode += escapeIndex;
+			BT_WALK_ADVANCE(escapeIndex);
 			curIndex += escapeIndex;
 		}
 	}

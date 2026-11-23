@@ -71,6 +71,16 @@ class  btStridingMeshInterface
 		virtual void	preallocateVertices(int numverts)=0;
 		virtual void	preallocateIndices(int numindices)=0;
 
+#ifdef BULLET_SMALL_MEMORY
+		///Meshes whose data is not addressable in memory (e.g. streamed from
+		///ROM through a cache) return the triangle's three unscaled vertices
+		///here instead of exposing vertex/index bases. Default: not supported.
+		virtual bool	getTriangleVertices(int subpart, int triangleIndex, btVector3* vertices) const
+		{
+			(void)subpart; (void)triangleIndex; (void)vertices;
+			return false;
+		}
+#endif
 		virtual bool	hasPremadeAabb() const { return false; }
 		virtual void	setPremadeAabb(const btVector3& aabbMin, const btVector3& aabbMax ) const
                 {

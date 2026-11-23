@@ -168,6 +168,17 @@ typedef btAlignedObjectArray<btQuantizedBvhNode>	QuantizedNodeArray;
 typedef btAlignedObjectArray<btBvhSubtreeInfo>		BvhSubtreeInfoArray;
 
 
+#ifdef BULLET_SMALL_MEMORY
+///Source of quantized nodes that do not live in memory (e.g. read from ROM
+///through a cache). Only the stackless traversals support it.
+class btExternalBvhNodes
+{
+public:
+	virtual ~btExternalBvhNodes() {}
+	virtual void fetchNode(int nodeIndex, btQuantizedBvhNode& node) const = 0;
+};
+#endif
+
 ///The btQuantizedBvh class stores an AABB tree that can be quickly traversed on CPU and Cell SPU.
 ///It is used by the btBvhTriangleMeshShape as midphase, and by the btMultiSapBroadphase.
 ///It is recommended to use quantization for better performance and lower memory requirements.
@@ -206,6 +217,10 @@ protected:
 
 	//This is only used for serialization so we don't have to add serialization directly to btAlignedObjectArray
 	mutable int m_subtreeHeaderCount;
+
+#ifdef BULLET_SMALL_MEMORY
+	const btExternalBvhNodes*	m_externalNodes;
+#endif
 
 	
 
@@ -343,6 +358,27 @@ public:
 	QuantizedNodeArray&	getLeafNodeArray() {			return	m_quantizedLeafNodes;	}
 	///buildInternal is expert use only: assumes that setQuantizationValues and LeafNodeArray are initialized
 	void	buildInternal();
+#ifdef BULLET_SMALL_MEMORY
+	///Use a tree built elsewhere whose nodes are fetched on demand (see
+	///btExternalBvhNodes); the quantization values must be the ones it was
+	///built with. Forces stackless traversal.
+	void	setExternalNodes(const btExternalBvhNodes* nodes, int numNodes,
+	                         const btVector3& bvhAabbMin, const btVector3& bvhAabbMax,
+	                         const btVector3& bvhQuantization)
+	{
+		m_externalNodes = nodes;
+		m_curNodeIndex = numNodes;
+		m_bvhAabbMin = bvhAabbMin;
+		m_bvhAabbMax = bvhAabbMax;
+		m_bvhQuantization = bvhQuantization;
+		m_useQuantization = true;
+		m_traversalMode = TRAVERSAL_STACKLESS;
+	}
+	const btVector3& getBvhAabbMin() const { return m_bvhAabbMin; }
+	const btVector3& getBvhAabbMax() const { return m_bvhAabbMax; }
+	const btVector3& getBvhQuantization() const { return m_bvhQuantization; }
+	int getNumNodes() const { return m_curNodeIndex; }
+#endif
 	///***************************************** expert/internal use only *************************
 
 	void	reportAabbOverlappingNodex(btNodeOverlapCallback* nodeCallback,const btVector3& aabbMin,const btVector3& aabbMax) const;
