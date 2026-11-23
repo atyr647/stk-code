@@ -16,6 +16,7 @@
 // survive that.
 #undef NDEBUG
 #include <libdragon.h>
+#include <system.h>     // hook_stdio_calls
 #include <sys/stat.h>
 #include <cstdio>
 #include <cstdlib>
@@ -55,6 +56,14 @@ static void print_heap(const char *when)
            hs.used / 1024, hs.total / 1024, hs.free / 1024);
 }
 
+#if !defined(STK_N64_CONSOLE) && !defined(STK_N64_SCREEN_LOG)
+static int write_debug(char *data, unsigned int len)
+{
+    debugf("%.*s", (int)len, data);
+    return (int)len;
+}
+#endif
+
 int main()
 {
     debug_init_isviewer();
@@ -78,12 +87,19 @@ int main()
     setenv("XDG_CACHE_HOME", "ram:/home/.cache", 1);
     setenv("SUPERTUXKART_DATADIR", "rom:", 1);   // STK appends "/data/"
 
-#ifndef STK_N64_SCREEN_LOG
+#if defined(STK_N64_CONSOLE) && !defined(STK_N64_SCREEN_LOG)
     console_init();
     console_set_render_mode(RENDER_AUTOMATIC);
 #endif
+#if defined(STK_N64_CONSOLE) || defined(STK_N64_SCREEN_LOG)
     console_set_debug(true);
     print_heap("after console init");
+#else
+    // No console (it costs 600 KB of heap): stdout -- STK's log -- goes
+    // straight to the debug channel.
+    static stdio_t stdout_to_debug = { NULL, write_debug, NULL };
+    hook_stdio_calls(&stdout_to_debug);
+#endif
 
     printf("[n64] SuperTuxKart for Nintendo 64 (%s RDRAM)\n",
            is_memory_expanded() ? "8 MiB" : "4 MiB");

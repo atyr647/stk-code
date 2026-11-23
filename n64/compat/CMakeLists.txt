@@ -26,6 +26,10 @@ add_library(stk_n64_compat STATIC
 add_library(stk_n64_curl STATIC src/curl_stub.c)
 add_library(stk_n64_mbedcrypto STATIC src/mbedtls_stub.c)
 
+option(STK_N64_CONSOLE "Show the log on an on-screen console. Costs 600 KB of heap (two 32-bit framebuffers); without it the log goes to the debug channel (ISViewer / USB) only" OFF)
+if(STK_N64_CONSOLE)
+    add_compile_definitions(STK_N64_CONSOLE=1)
+endif()
 option(STK_N64_SCREEN_LOG "Show the log on screen from static initialisation on" OFF)
 if(STK_N64_SCREEN_LOG)
     add_compile_definitions(STK_N64_SCREEN_LOG=1)

@@ -2217,7 +2217,8 @@ void Track::loadTrackModel(bool reverse_track, unsigned int mode_id)
     model_def_loader.cleanLibraryNodesAfterLoad();
     main_loop->renderGUI(5100);
 
-    Scripting::ScriptEngine::getInstance()->compileLoadedScripts();
+    Scripting::ScriptEngine::getInstance()->compileLoadedScripts(
+                                               m_root + "n64_script.asb");
     main_loop->renderGUI(5200);
 
     // Init all track objects

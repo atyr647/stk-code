@@ -27,6 +27,10 @@ add_definitions(-DNBUFF=0x2000)
 # (.spm/.b3d materials have at most two textures); the rest is the desktop
 # renderers' business. 2 layers: ~110 bytes less per material copy.
 add_definitions(-D_IRR_MATERIAL_MAX_TEXTURES_=2)
+# Track scripts run from AngelScript bytecode precompiled by a host build
+# (n64/tools/export_collision.sh writes tracks/*/n64_script.asb): no script
+# compiler (AS_NO_COMPILER halves AngelScript) and no preprocessor (mcpp).
+add_definitions(-DSTK_SCRIPT_BYTECODE_ONLY -DAS_NO_COMPILER)
 # lib/irrlicht: switch off loaders/writers nothing on the N64 uses
 # (IrrCompileConfig.h's own NO_* switches). ZIP stays: addons install from it.
 add_definitions(-DNO_IRR_COMPILE_WITH_BMP_LOADER_ -DNO_IRR_COMPILE_WITH_BMP_WRITER_

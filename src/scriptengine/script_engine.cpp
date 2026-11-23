@@ -16,11 +16,15 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
+#ifndef STK_SCRIPT_BYTECODE_ONLY
 extern "C"
 {
     #include <mcpp_lib.h>
 }
+#endif
 #include <assert.h>
+#include <cstdio>
+#include <cstdlib>
 #include <angelscript.h>
 #include "io/file_manager.hpp"
 #include "karts/kart.hpp"
@@ -66,6 +70,8 @@ namespace Scripting
     //Constructor, creates a new Scripting Engine using AngelScript
     ScriptEngine::ScriptEngine()
     {
+        m_source_hash = 0xcbf29ce484222325ull;
+        m_source_count = 0;
         // Create the script engine
         m_engine = asCreateScriptEngine(ANGELSCRIPT_VERSION);
         if (m_engine == NULL)
@@ -95,6 +101,7 @@ namespace Scripting
     *  \param string scriptname = name of script to get
     *  \return      The corresponding script
     */
+#ifndef STK_SCRIPT_BYTECODE_ONLY
     std::string getScript(std::string script_path)
     {
         std::string script_file = FileUtils::getPortableReadingPath(script_path);
@@ -170,6 +177,52 @@ namespace Scripting
         mcpp_use_mem_buffers(1);
         return result;
     }
+#endif
+
+    // ------------------------------------------------------------------------
+    /** Precompiled modules (STK_SCRIPT_BYTECODE_ONLY builds, i.e. the N64
+     *  port, carry no compiler): a header with the hash of the script files
+     *  the module was built from, then AngelScript's bytecode. */
+    static const char BYTECODE_MAGIC[8] = { 'S','T','K','A','S','B','\0','\1' };
+
+    class FileBinaryStream : public asIBinaryStream
+    {
+        FILE *m_file;
+    public:
+        FileBinaryStream(FILE *f) : m_file(f) {}
+        virtual int Read(void *ptr, asUINT size)
+        {
+            return fread(ptr, 1, size, m_file) == size ? 0 : -1;
+        }
+        virtual int Write(const void *ptr, asUINT size)
+        {
+            return fwrite(ptr, 1, size, m_file) == size ? 0 : -1;
+        }
+    };   // FileBinaryStream
+
+    /** 64-bit FNV-1a of a file's bytes, folded into hash. False if the file
+     *  does not exist. */
+    static bool hashFile(const std::string &path, uint64_t *hash)
+    {
+        FILE *f = fopen(path.c_str(), "rb");
+        if (!f)
+            return false;
+        unsigned char buf[512];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        {
+            for (size_t i = 0; i < n; i++)
+            {
+                *hash ^= buf[i];
+                *hash *= 0x100000001b3ull;
+            }
+        }
+        fclose(f);
+        // separate files, so moving bytes between them changes the hash
+        *hash ^= 0xff;
+        *hash *= 0x100000001b3ull;
+        return true;
+    }   // hashFile
 
     //-----------------------------------------------------------------------------
 
@@ -521,6 +574,23 @@ namespace Scripting
 
     bool ScriptEngine::loadScript(std::string script_path, bool clear_previous)
     {
+        if (clear_previous)
+        {
+            m_source_hash = 0xcbf29ce484222325ull;
+            m_source_count = 0;
+        }
+        const std::string raw_path =
+            FileUtils::getPortableReadingPath(script_path);
+        if (!file_manager->fileExists(raw_path) ||
+            !hashFile(raw_path, &m_source_hash))
+            return false;
+        m_source_count++;
+#ifdef STK_SCRIPT_BYTECODE_ONLY
+        // Built from the precompiled module in compileLoadedScripts
+        if (clear_previous)
+            m_engine->DiscardModule(MODULE_ID_MAIN_SCRIPT_FILE);
+        return true;
+#else
         int r;
 
         std::string script = getScript(script_path);
@@ -545,14 +615,65 @@ namespace Scripting
         }
     
         return true;
+#endif
     }
 
     //-----------------------------------------------------------------------------
 
-    bool ScriptEngine::compileLoadedScripts()
+    bool ScriptEngine::compileLoadedScripts(const std::string &bytecode_path)
+    {
+        // Building consumes the added scripts: the next module starts afresh
+        const bool ok = buildModule(bytecode_path);
+        m_source_hash = 0xcbf29ce484222325ull;
+        m_source_count = 0;
+        return ok;
+    }
+
+    //-----------------------------------------------------------------------------
+
+    bool ScriptEngine::buildModule(const std::string &bytecode_path)
     {
         int r;
         asIScriptModule *mod = m_engine->GetModule(MODULE_ID_MAIN_SCRIPT_FILE, asGM_CREATE_IF_NOT_EXISTS);
+
+        // A precompiled module for exactly these script files?
+        const bool exporting = getenv("STK_SCRIPT_EXPORT") != NULL;
+        if (m_source_count > 0 && !bytecode_path.empty() && !exporting)
+        {
+            FILE *f = fopen(bytecode_path.c_str(), "rb");
+            if (f)
+            {
+                char magic[8];
+                uint64_t hash = 0;
+                bool ok = fread(magic, 1, 8, f) == 8 &&
+                          memcmp(magic, BYTECODE_MAGIC, 8) == 0 &&
+                          fread(&hash, 1, 8, f) == 8 &&
+                          hash == m_source_hash;
+                if (ok)
+                {
+                    FileBinaryStream in(f);
+                    ok = mod->LoadByteCode(&in) >= 0;
+                }
+                fclose(f);
+                if (ok)
+                {
+                    Log::info("Scripting", "Loaded precompiled '%s'.",
+                              bytecode_path.c_str());
+                    return true;
+                }
+                Log::warn("Scripting", "'%s' does not match the scripts.",
+                          bytecode_path.c_str());
+            }
+        }
+#ifdef STK_SCRIPT_BYTECODE_ONLY
+        if (m_source_count > 0)
+        {
+            Log::fatal("Scripting", "This build only runs precompiled "
+                       "scripts, and '%s' is missing or stale: regenerate "
+                       "the data.", bytecode_path.c_str());
+        }
+        return true;
+#endif
 
         // Compile the script. If there are any compiler messages they will
         // be written to the message stream that we set right after creating the
@@ -563,6 +684,25 @@ namespace Scripting
         {
             Log::error("Scripting", "Build() failed");
             return false;
+        }
+
+        // Host builds: STK_SCRIPT_EXPORT=1 writes the precompiled module
+        if (exporting && m_source_count > 0 && !bytecode_path.empty())
+        {
+            FILE *f = fopen(bytecode_path.c_str(), "wb");
+            bool ok = f && fwrite(BYTECODE_MAGIC, 1, 8, f) == 8 &&
+                      fwrite(&m_source_hash, 1, 8, f) == 8;
+            if (ok)
+            {
+                FileBinaryStream out(f);
+                ok = mod->SaveByteCode(&out, /*stripDebugInfo*/true) >= 0;
+            }
+            if (f)
+                ok = fclose(f) == 0 && ok;
+            if (!ok)
+                Log::fatal("Scripting", "Could not write '%s'.",
+                           bytecode_path.c_str());
+            Log::info("Scripting", "Wrote '%s'.", bytecode_path.c_str());
         }
 
         // The engine doesn't keep a copy of the script sections after Build() has

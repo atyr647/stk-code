@@ -78,7 +78,10 @@ namespace Scripting
         void cleanupCache();
 
         bool loadScript(std::string script_path, bool clear_previous);
-        bool compileLoadedScripts();
+        /** Builds the scripts added by loadScript. If bytecode_path names a
+         *  precompiled module for exactly these script files (see
+         *  STK_SCRIPT_EXPORT), it is loaded instead of compiling. */
+        bool compileLoadedScripts(const std::string &bytecode_path = "");
 
         void addPendingTimeout(double time, const std::string& callback_name);
         void addPendingTimeout(double time, asIScriptFunction* delegate_fn);
@@ -89,9 +92,14 @@ namespace Scripting
     private:
         asIScriptEngine *m_engine;
         std::map<std::string, asIScriptFunction*> m_functions_cache;
+        /** Hash of the raw script files added since the last clear, which
+         *  a precompiled module must have been built from. */
+        uint64_t m_source_hash;
+        unsigned m_source_count;
         PtrVector<PendingTimeout> m_pending_timeouts;
 
         void configureEngine(asIScriptEngine *engine);
+        bool buildModule(const std::string &bytecode_path);
     };   // class ScriptEngine
 
 }
