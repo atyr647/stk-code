@@ -34,11 +34,13 @@ EXCLUDE=(--exclude '*.xcf' --exclude '*.blend' --exclude '*.svg' --exclude '*.ic
          --exclude 'po/' --exclude 'supertuxkart_*.png' --exclude '*.desktop'
          --exclude '*.plist' --exclude 'n64_budget_report.json')
 if [ "${STK_N64_SERVER:-0}" = 1 ]; then
-    EXCLUDE+=(--exclude '*.png' --exclude '*.jpg' --exclude '*.jpeg'
-              --exclude '*.ogg' --exclude 'shaders/'
+    EXCLUDE+=(--exclude '*.ogg' --exclude 'shaders/'
               --exclude 'ttf/' --exclude 'replay/')
-    # (skins/ and gui/ stay: the engine reads their XML even without a
-    # renderer; their images are covered by the *.png/*.jpg rules)
+    # Images are kept, but emptied below: a server build never decodes
+    # them, yet it resolves materials through the texture files' presence
+    # (ServerDummyTexture). Without them every texture falls back to the
+    # default material, and triangles STK ignores for physics, or routes
+    # to the effect mesh, end up in the collision mesh.
 fi
 rsync -a "${EXCLUDE[@]}" "$STK/data/" "$WORK/fs/data/"
 for d in library models textures; do
@@ -73,6 +75,10 @@ if [ "${STK_N64_SERVER:-0}" = 1 ]; then
     # GUIEngine::Skin only checks that the configured fonts exist
     # (getAssetChecked); empty stand-ins keep 16 MB of fonts off the cartridge.
     for f in "$STK/data/ttf/"*; do : > "$WORK/fs/data/ttf/$(basename "$f")"; done
+fi
+if [ "${STK_N64_SERVER:-0}" = 1 ]; then
+    find "$WORK/fs/data" -type f \( -iname '*.png' -o -iname '*.jpg' \
+         -o -iname '*.jpeg' \) -exec truncate -s 0 {} +
 fi
 [ -n "$ARGS" ] && cp "$ARGS" "$WORK/fs/data/n64_args.txt"
 
