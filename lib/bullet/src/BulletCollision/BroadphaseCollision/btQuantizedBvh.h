@@ -171,11 +171,19 @@ typedef btAlignedObjectArray<btBvhSubtreeInfo>		BvhSubtreeInfoArray;
 #ifdef BULLET_SMALL_MEMORY
 ///Source of quantized nodes that do not live in memory (e.g. read from ROM
 ///through a cache). Only the stackless traversals support it.
+///
+///Leaves may be buckets: a leaf whose part id is n stands for the n+1
+///consecutive triangles starting at its triangle index, i.e. a collapsed
+///subtree whose leaves were in that order. The walks expand a bucket into
+///the triangles' own leaves (fetchLeaf, built by quantizeTriangleLeaf as
+///the tree build did) and test each exactly as the full tree would have:
+///same triangles, same order.
 class btExternalBvhNodes
 {
 public:
 	virtual ~btExternalBvhNodes() {}
 	virtual void fetchNode(int nodeIndex, btQuantizedBvhNode& node) const = 0;
+	virtual void fetchLeaf(int triangleIndex, btQuantizedBvhNode& node) const = 0;
 };
 #endif
 
@@ -374,6 +382,8 @@ public:
 		m_useQuantization = true;
 		m_traversalMode = TRAVERSAL_STACKLESS;
 	}
+	///The leaf node the tree build makes for a triangle (part 0).
+	void	quantizeTriangleLeaf(const btVector3* triangle, int triangleIndex, btQuantizedBvhNode& node) const;
 	const btVector3& getBvhAabbMin() const { return m_bvhAabbMin; }
 	const btVector3& getBvhAabbMax() const { return m_bvhAabbMax; }
 	const btVector3& getBvhQuantization() const { return m_bvhQuantization; }

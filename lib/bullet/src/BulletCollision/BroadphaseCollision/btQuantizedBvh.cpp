@@ -55,6 +55,44 @@ btQuantizedBvh::btQuantizedBvh() :
 
 
 
+#ifdef BULLET_SMALL_MEMORY
+void btQuantizedBvh::quantizeTriangleLeaf(const btVector3* triangle, int triangleIndex, btQuantizedBvhNode& node) const
+{
+	btVector3	aabbMin,aabbMax;
+	aabbMin.setValue(btScalar(BT_LARGE_FLOAT),btScalar(BT_LARGE_FLOAT),btScalar(BT_LARGE_FLOAT));
+	aabbMax.setValue(btScalar(-BT_LARGE_FLOAT),btScalar(-BT_LARGE_FLOAT),btScalar(-BT_LARGE_FLOAT));
+	aabbMin.setMin(triangle[0]);
+	aabbMax.setMax(triangle[0]);
+	aabbMin.setMin(triangle[1]);
+	aabbMax.setMax(triangle[1]);
+	aabbMin.setMin(triangle[2]);
+	aabbMax.setMax(triangle[2]);
+
+	//PCK: add these checks for zero dimensions of aabb
+	const btScalar MIN_AABB_DIMENSION = btScalar(0.002);
+	const btScalar MIN_AABB_HALF_DIMENSION = btScalar(0.001);
+	if (aabbMax.x() - aabbMin.x() < MIN_AABB_DIMENSION)
+	{
+		aabbMax.setX(aabbMax.x() + MIN_AABB_HALF_DIMENSION);
+		aabbMin.setX(aabbMin.x() - MIN_AABB_HALF_DIMENSION);
+	}
+	if (aabbMax.y() - aabbMin.y() < MIN_AABB_DIMENSION)
+	{
+		aabbMax.setY(aabbMax.y() + MIN_AABB_HALF_DIMENSION);
+		aabbMin.setY(aabbMin.y() - MIN_AABB_HALF_DIMENSION);
+	}
+	if (aabbMax.z() - aabbMin.z() < MIN_AABB_DIMENSION)
+	{
+		aabbMax.setZ(aabbMax.z() + MIN_AABB_HALF_DIMENSION);
+		aabbMin.setZ(aabbMin.z() - MIN_AABB_HALF_DIMENSION);
+	}
+
+	quantize(&node.m_quantizedAabbMin[0],aabbMin,0);
+	quantize(&node.m_quantizedAabbMax[0],aabbMax,1);
+	node.m_escapeIndexOrTriangleIndex = triangleIndex;
+}
+#endif
+
 void btQuantizedBvh::buildInternal()
 {
 	///assumes that caller filled in the m_quantizedLeafNodes
@@ -663,6 +701,30 @@ void	btQuantizedBvh::walkStacklessQuantizedTreeAgainstRay(btNodeOverlapCallback*
 		
 		if (isLeafNode && rayBoxOverlap)
 		{
+#if defined(BULLET_SMALL_MEMORY) && defined(RAYAABB2)
+			if (m_externalNodes)
+			{
+				// each bucketed triangle gets the leaf test above
+				const int first = rootNode->getTriangleIndex();
+				const int count = rootNode->getPartId() + 1;
+				for (int i = 0; i < count; i++)
+				{
+					btQuantizedBvhNode leaf;
+					m_externalNodes->fetchLeaf(first + i, leaf);
+					if (!testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,leaf.m_quantizedAabbMin,leaf.m_quantizedAabbMax))
+						continue;
+					btVector3 leafBounds[2];
+					leafBounds[0] = unQuantize(leaf.m_quantizedAabbMin);
+					leafBounds[1] = unQuantize(leaf.m_quantizedAabbMax);
+					leafBounds[0] -= aabbMax;
+					leafBounds[1] -= aabbMin;
+					btScalar leafParam = 1.0;
+					if (btRayAabb2 (raySource, rayDirection, sign, leafBounds, leafParam, 0.0f, lambda_max))
+						nodeCallback->processNode(0, first + i);
+				}
+			}
+			else
+#endif
 			nodeCallback->processNode(rootNode->getPartId(),rootNode->getTriangleIndex());
 		}
 		
@@ -729,6 +791,21 @@ void	btQuantizedBvh::walkStacklessQuantizedTree(btNodeOverlapCallback* nodeCallb
 		
 		if (isLeafNode && aabbOverlap)
 		{
+#ifdef BULLET_SMALL_MEMORY
+			if (m_externalNodes)
+			{
+				const int first = rootNode->getTriangleIndex();
+				const int count = rootNode->getPartId() + 1;
+				for (int i = 0; i < count; i++)
+				{
+					btQuantizedBvhNode leaf;
+					m_externalNodes->fetchLeaf(first + i, leaf);
+					if (testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,leaf.m_quantizedAabbMin,leaf.m_quantizedAabbMax))
+						nodeCallback->processNode(0, first + i);
+				}
+			}
+			else
+#endif
 			nodeCallback->processNode(rootNode->getPartId(),rootNode->getTriangleIndex());
 		} 
 		

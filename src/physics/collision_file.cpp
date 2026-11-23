@@ -23,10 +23,11 @@
 #include "utils/log.hpp"
 
 #include <algorithm>
+#include <map>
 #include <cstddef>
 #include <cstdlib>
 
-const char *CollisionFile::MAGIC = "STKCOL\0\2";
+const char *CollisionFile::MAGIC = "STKCOL\0\3";
 static const uint32_t BYTE_ORDER_MARK = 0x01020304;
 
 // ============================================================================
@@ -90,14 +91,16 @@ const uint8_t* FilePageCache::page(uint32_t page_number)
 }   // page
 
 // ----------------------------------------------------------------------------
-void FilePageCache::read(uint32_t offset, void *dst, uint32_t size)
+void FilePageCache::readSlow(uint32_t offset, void *dst, uint32_t size)
 {
     uint8_t *out = (uint8_t*)dst;
     while (size > 0)
     {
         const uint32_t in_page = offset % m_page_size;
         const uint32_t n = std::min(size, m_page_size - in_page);
-        memcpy(out, page(offset / m_page_size) + in_page, n);
+        m_last_page = offset / m_page_size;
+        m_last_data = page(m_last_page);
+        memcpy(out, m_last_data + in_page, n);
         out += n;
         offset += n;
         size -= n;
@@ -122,19 +125,27 @@ CollisionFile* CollisionFile::open(const std::string &path,
         return NULL;
     }
     cf->m_cache.read(0, &cf->m_header, sizeof(cf->m_header));
+    const uint64_t tris = h.m_num_triangles;
     bool ok = memcmp(h.m_magic, MAGIC, 8) == 0 &&
               h.m_byte_order == BYTE_ORDER_MARK &&
               h.m_file_size == cf->m_cache.getFileSize() &&
+              (h.m_vertex_index_size == 2 || h.m_vertex_index_size == 4) &&
+              h.m_record_size >= 3 * h.m_vertex_index_size + 7 &&
+              h.m_record_size <= 32 &&
               h.m_off_nodes + uint64_t(h.m_num_nodes) *
                               sizeof(btQuantizedBvhNode) <= h.m_file_size &&
-              h.m_off_triangles + uint64_t(h.m_num_triangles) *
-                              sizeof(CollisionTriangle) <= h.m_file_size;
+              h.m_off_records + tris * h.m_record_size <= h.m_file_size &&
+              h.m_off_vertices + uint64_t(h.m_num_vertices) * 12
+                                                        <= h.m_file_size &&
+              h.m_off_normals + uint64_t(h.m_num_normals) * 4
+                                                        <= h.m_file_size;
     if (!ok)
     {
         Log::warn("CollisionFile", "Ignoring malformed '%s'.", path.c_str());
         delete cf;
         return NULL;
     }
+    cf->getBvh();
     return cf;
 }   // open
 
@@ -161,32 +172,70 @@ btOptimizedBvh* CollisionFile::getBvh()
 }   // getBvh
 
 // ----------------------------------------------------------------------------
+void CollisionFile::readRecord(unsigned triangle, uint32_t *vertices,
+                               uint16_t *normals, unsigned *material) const
+{
+    uint8_t r[32];
+    const unsigned size = m_header.m_record_size;
+    m_cache.read(m_header.m_off_records + triangle * size, r, size);
+    const unsigned vs = m_header.m_vertex_index_size;
+    for (unsigned k = 0; k < 3; k++)
+    {
+        if (vs == 2)
+        {
+            uint16_t v;
+            memcpy(&v, r + 2 * k, 2);
+            vertices[k] = v;
+        }
+        else
+            memcpy(&vertices[k], r + 4 * k, 4);
+    }
+    memcpy(normals, r + 3 * vs, 6);
+    *material = r[3 * vs + 6];
+}   // readRecord
+
+// ----------------------------------------------------------------------------
 void CollisionFile::readTriangle(unsigned triangle, btVector3 *p1,
                                  btVector3 *p2, btVector3 *p3) const
 {
-    float v[9];
-    m_cache.read(m_header.m_off_triangles +
-                 triangle * sizeof(CollisionTriangle), v, sizeof(v));
-    *p1 = btVector3(v[0], v[1], v[2]);
-    *p2 = btVector3(v[3], v[4], v[5]);
-    *p3 = btVector3(v[6], v[7], v[8]);
+    Decoded &d = m_decoded[triangle & (DECODED - 1)];
+    if (d.m_triangle != (int)triangle)
+    {
+        uint32_t v[3];
+        uint16_t n[3];
+        unsigned m;
+        readRecord(triangle, v, n, &m);
+        for (unsigned k = 0; k < 3; k++)
+        {
+            m_cache.read(m_header.m_off_vertices + 12 * v[k],
+                         &d.m_vertices[3 * k], 12);
+        }
+        d.m_triangle = (int)triangle;
+    }
+    const float *f = d.m_vertices;
+    *p1 = btVector3(f[0], f[1], f[2]);
+    *p2 = btVector3(f[3], f[4], f[5]);
+    *p3 = btVector3(f[6], f[7], f[8]);
 }   // readTriangle
 
 // ----------------------------------------------------------------------------
 void CollisionFile::readNormals(unsigned triangle, uint32_t *normals) const
 {
-    m_cache.read(m_header.m_off_triangles +
-                 triangle * sizeof(CollisionTriangle) +
-                 offsetof(CollisionTriangle, m_normals), normals, 12);
+    uint32_t v[3];
+    uint16_t n[3];
+    unsigned m;
+    readRecord(triangle, v, n, &m);
+    for (unsigned k = 0; k < 3; k++)
+        m_cache.read(m_header.m_off_normals + 4 * n[k], &normals[k], 4);
 }   // readNormals
 
 // ----------------------------------------------------------------------------
 unsigned CollisionFile::readMaterial(unsigned triangle) const
 {
-    uint16_t m;
-    m_cache.read(m_header.m_off_triangles +
-                 triangle * sizeof(CollisionTriangle) +
-                 offsetof(CollisionTriangle, m_material), &m, 2);
+    uint32_t v[3];
+    uint16_t n[3];
+    unsigned m;
+    readRecord(triangle, v, n, &m);
     return m;
 }   // readMaterial
 
@@ -196,6 +245,14 @@ void CollisionFile::fetchNode(int index, btQuantizedBvhNode &node) const
     m_cache.read(m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode),
                  &node, sizeof(btQuantizedBvhNode));
 }   // fetchNode
+
+// ----------------------------------------------------------------------------
+void CollisionFile::fetchLeaf(int triangle, btQuantizedBvhNode &node) const
+{
+    btVector3 t[3];
+    readTriangle(triangle, t, t + 1, t + 2);
+    m_bvh->quantizeTriangleLeaf(t, triangle, node);
+}   // fetchLeaf
 
 // ----------------------------------------------------------------------------
 bool CollisionFile::getTriangleVertices(int subpart, int triangle,
@@ -236,12 +293,96 @@ void CollisionFile::getPremadeAabb(btVector3 *aabbMin,
 }   // getPremadeAabb
 
 // ----------------------------------------------------------------------------
-bool writeCollisionFileData(const std::string &path,
-                            const CollisionFileHeader &header,
-                            const std::vector<btQuantizedBvhNode> &nodes,
+/** Copies the subtree at tree[i] into out with every subtree of at most
+ *  BUCKET leaves collapsed into one leaf. Leaves are numbered in order, so
+ *  a subtree's triangles are consecutive. */
+static void collapse(const btQuantizedBvhNode *tree, int i,
+                     std::vector<btQuantizedBvhNode> *out)
+{
+    const btQuantizedBvhNode &n = tree[i];
+    const int size = n.isLeafNode() ? 1 : n.getEscapeIndex();
+    const int leaves = (size + 1) / 2;
+    if (leaves <= (int)CollisionFile::BUCKET)
+    {
+        int first = i;
+        while (!tree[first].isLeafNode())
+            first++;
+        btQuantizedBvhNode bucket = n;
+        bucket.m_escapeIndexOrTriangleIndex =
+            ((leaves - 1) << (31 - MAX_NUM_PARTS_IN_BITS)) |
+            tree[first].getTriangleIndex();
+        out->push_back(bucket);
+        return;
+    }
+    const size_t at = out->size();
+    out->push_back(n);
+    const int left = i + 1;
+    const int left_size = tree[left].isLeafNode()
+                        ? 1 : tree[left].getEscapeIndex();
+    collapse(tree, left, out);
+    collapse(tree, left + left_size, out);
+    (*out)[at].m_escapeIndexOrTriangleIndex = -(int)(out->size() - at);
+}   // collapse
+
+// ----------------------------------------------------------------------------
+bool writeCollisionFileData(const std::string &path, CollisionFileHeader h,
+                            const btQuantizedBvhNode *tree, int tree_nodes,
                             const std::vector<CollisionTriangle> &triangles)
 {
-    CollisionFileHeader h = header;
+    // Leaf triangle indices -> leaf order (positions in the leaf sequence)
+    std::vector<btQuantizedBvhNode> renumbered(tree, tree + tree_nodes);
+    int next = 0;
+    for (auto &n : renumbered)
+    {
+        if (n.isLeafNode())
+            n.m_escapeIndexOrTriangleIndex = next++;
+    }
+    std::vector<btQuantizedBvhNode> nodes;
+    collapse(renumbered.data(), 0, &nodes);
+
+    // Shared vertex and normal tables, first-use order
+    std::vector<float> vertices;
+    std::vector<uint32_t> normals;
+    std::vector<uint32_t> tri_vertices, tri_normals;
+    {
+        struct Key
+        {
+            uint32_t v[3];
+            bool operator<(const Key &o) const
+            {
+                return memcmp(v, o.v, sizeof(v)) < 0;
+            }
+        };
+        std::map<Key, uint32_t> vertex_ids;
+        std::map<uint32_t, uint32_t> normal_ids;
+        for (const CollisionTriangle &t : triangles)
+        {
+            for (int k = 0; k < 3; k++)
+            {
+                Key key;
+                memcpy(key.v, &t.m_vertices[3 * k], 12);
+                auto v = vertex_ids.insert(std::make_pair(key,
+                                     (uint32_t)vertex_ids.size()));
+                if (v.second)
+                    vertices.insert(vertices.end(), &t.m_vertices[3 * k],
+                                    &t.m_vertices[3 * k] + 3);
+                tri_vertices.push_back(v.first->second);
+                auto n = normal_ids.insert(std::make_pair(t.m_normals[k],
+                                     (uint32_t)normal_ids.size()));
+                if (n.second)
+                    normals.push_back(t.m_normals[k]);
+                tri_normals.push_back(n.first->second);
+            }
+        }
+    }
+    if (normals.size() > 65536 || h.m_num_materials > 256)
+        return false;
+    h.m_num_nodes = (uint32_t)nodes.size();
+    h.m_num_vertices = (uint32_t)(vertices.size() / 3);
+    h.m_num_normals = (uint32_t)normals.size();
+    h.m_vertex_index_size = h.m_num_vertices <= 65536 ? 2 : 4;
+    h.m_record_size = (3 * h.m_vertex_index_size + 7 + 1) & ~1u;
+
     std::vector<uint8_t> out(sizeof(h));
     auto pad16 = [&out]() { while (out.size() % 16) out.push_back(0); };
     auto append = [&out](const void *p, size_t n)
@@ -252,8 +393,32 @@ bool writeCollisionFileData(const std::string &path,
     h.m_off_nodes = (uint32_t)out.size();
     append(nodes.data(), nodes.size() * sizeof(btQuantizedBvhNode));
     pad16();
-    h.m_off_triangles = (uint32_t)out.size();
-    append(triangles.data(), triangles.size() * sizeof(CollisionTriangle));
+    h.m_off_records = (uint32_t)out.size();
+    for (size_t t = 0; t < triangles.size(); t++)
+    {
+        uint8_t r[32] = { 0 };
+        for (int k = 0; k < 3; k++)
+        {
+            const uint32_t v = tri_vertices[3 * t + k];
+            if (h.m_vertex_index_size == 2)
+            {
+                const uint16_t v16 = (uint16_t)v;
+                memcpy(r + 2 * k, &v16, 2);
+            }
+            else
+                memcpy(r + 4 * k, &v, 4);
+            const uint16_t n16 = (uint16_t)tri_normals[3 * t + k];
+            memcpy(r + 3 * h.m_vertex_index_size + 2 * k, &n16, 2);
+        }
+        r[3 * h.m_vertex_index_size + 6] = (uint8_t)triangles[t].m_material;
+        append(r, h.m_record_size);
+    }
+    pad16();
+    h.m_off_vertices = (uint32_t)out.size();
+    append(vertices.data(), vertices.size() * sizeof(float));
+    pad16();
+    h.m_off_normals = (uint32_t)out.size();
+    append(normals.data(), normals.size() * sizeof(uint32_t));
     pad16();
     h.m_file_size = (uint32_t)out.size();
     memcpy(out.data(), &h, sizeof(h));

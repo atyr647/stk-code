@@ -258,7 +258,6 @@ bool TriangleMesh::exportCollisionFile(const std::string &path) const
             t->m_normals[k] = m_normals[3 * i + k];
         }
         t->m_material = materials[i];
-        t->m_padding = 0;
     };
     std::vector<uint32_t> file_order;
     if (!CollisionFile::write(path, m_hash.get(), *shape,

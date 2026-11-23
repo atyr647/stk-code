@@ -2,181 +2,181 @@
  "abyss": {
   "downscaled": {
    "finished": true,
-   "mean_time": 86.58,
+   "mean_time": 87.06,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 87.3,
+   "mean_time": 86.19,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -0.8%)"
+  "verdict": "ok (lap time +1.0%)"
  },
  "black_forest": {
   "downscaled": {
    "finished": true,
-   "mean_time": 177.87,
+   "mean_time": 178.85,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 174.56,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +1.9%)"
- },
- "candela_city": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 71.9,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 70.23,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +2.4%)"
- },
- "cocoa_temple": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 80.03,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 76.72,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +4.3%)"
- },
- "cornfield_crossing": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 87.9,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 88.36,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time -0.5%)"
- },
- "fortmagma": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 73.9,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 71.41,
-   "rescues_per_race": 0
-  },
-  "verdict": "ok (lap time +3.5%)"
- },
- "gran_paradiso_island": {
-  "downscaled": {
-   "finished": true,
-   "mean_time": 95.01,
-   "rescues_per_race": 0
-  },
-  "original": {
-   "finished": true,
-   "mean_time": 93.1,
+   "mean_time": 175.13,
    "rescues_per_race": 0
   },
   "verdict": "ok (lap time +2.1%)"
  },
- "hacienda": {
+ "candela_city": {
   "downscaled": {
    "finished": true,
-   "mean_time": 77.47,
-   "rescues_per_race": 0
+   "mean_time": 72.4,
+   "rescues_per_race": 0.5
   },
   "original": {
    "finished": true,
-   "mean_time": 78.23,
+   "mean_time": 72.36,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -1.0%)"
+  "verdict": "ok (lap time +0.1%)"
  },
- "lighthouse": {
+ "cocoa_temple": {
   "downscaled": {
    "finished": true,
-   "mean_time": 56.79,
+   "mean_time": 82.28,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 55.94,
+   "mean_time": 81.02,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time +1.6%)"
+ },
+ "cornfield_crossing": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 87.59,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 87.6,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time -0.0%)"
+ },
+ "fortmagma": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 74.0,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 71.44,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time +3.6%)"
+ },
+ "gran_paradiso_island": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 93.71,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 92.32,
    "rescues_per_race": 0
   },
   "verdict": "ok (lap time +1.5%)"
  },
- "mines": {
+ "hacienda": {
   "downscaled": {
    "finished": true,
-   "mean_time": 77.61,
+   "mean_time": 77.06,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 79.73,
+   "mean_time": 77.92,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -2.7%)"
+  "verdict": "ok (lap time -1.1%)"
+ },
+ "lighthouse": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 57.28,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 58.53,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time -2.1%)"
+ },
+ "mines": {
+  "downscaled": {
+   "finished": true,
+   "mean_time": 80.08,
+   "rescues_per_race": 0
+  },
+  "original": {
+   "finished": true,
+   "mean_time": 78.74,
+   "rescues_per_race": 0
+  },
+  "verdict": "ok (lap time +1.7%)"
  },
  "minigolf": {
   "downscaled": {
    "finished": true,
-   "mean_time": 53.14,
+   "mean_time": 52.28,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 52.21,
+   "mean_time": 50.47,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +1.8%)"
+  "verdict": "ok (lap time +3.6%)"
  },
  "olivermath": {
   "downscaled": {
    "finished": true,
-   "mean_time": 32.26,
+   "mean_time": 32.5,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 33.99,
-   "rescues_per_race": 0
+   "mean_time": 33.05,
+   "rescues_per_race": 0.5
   },
-  "verdict": "ok (lap time -5.1%)"
+  "verdict": "ok (lap time -1.7%)"
  },
  "ravenbridge_mansion": {
   "downscaled": {
    "finished": true,
-   "mean_time": 92.81,
+   "mean_time": 92.5,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 93.78,
+   "mean_time": 91.18,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -1.0%)"
+  "verdict": "ok (lap time +1.4%)"
  },
  "sandtrack": {
   "downscaled": {
    "finished": true,
-   "mean_time": 80.76,
+   "mean_time": 81.26,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 81.24,
+   "mean_time": 81.71,
    "rescues_per_race": 0
   },
   "verdict": "ok (lap time -0.6%)"
@@ -184,25 +184,25 @@
  "scotland": {
   "downscaled": {
    "finished": true,
-   "mean_time": 79.9,
+   "mean_time": 78.54,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 78.58,
+   "mean_time": 79.76,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +1.7%)"
+  "verdict": "ok (lap time -1.5%)"
  },
  "snowmountain": {
   "downscaled": {
    "finished": true,
-   "mean_time": 76.73,
+   "mean_time": 75.84,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 76.88,
+   "mean_time": 75.97,
    "rescues_per_race": 0
   },
   "verdict": "ok (lap time -0.2%)"
@@ -210,66 +210,66 @@
  "snowtuxpeak": {
   "downscaled": {
    "finished": true,
-   "mean_time": 65.39,
+   "mean_time": 64.39,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 63.5,
+   "mean_time": 65.35,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +3.0%)"
+  "verdict": "ok (lap time -1.5%)"
  },
  "stk_enterprise": {
   "downscaled": {
    "finished": true,
-   "mean_time": 96.15,
+   "mean_time": 94.63,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 97.77,
+   "mean_time": 94.46,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -1.7%)"
+  "verdict": "ok (lap time +0.2%)"
  },
  "volcano_island": {
   "downscaled": {
    "finished": true,
-   "mean_time": 142.48,
+   "mean_time": 143.65,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 142.81,
+   "mean_time": 142.77,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time -0.2%)"
+  "verdict": "ok (lap time +0.6%)"
  },
  "xr591": {
   "downscaled": {
    "finished": true,
-   "mean_time": 85.42,
-   "rescues_per_race": 6
+   "mean_time": 84.29,
+   "rescues_per_race": 5.5
   },
   "original": {
    "finished": true,
-   "mean_time": 84.42,
-   "rescues_per_race": 2.5
+   "mean_time": 85.56,
+   "rescues_per_race": 5.5
   },
-  "verdict": "FAIL: rescues 2.5 -> 6.0"
+  "verdict": "ok (lap time -1.5%)"
  },
  "zengarden": {
   "downscaled": {
    "finished": true,
-   "mean_time": 47.7,
+   "mean_time": 46.21,
    "rescues_per_race": 0
   },
   "original": {
    "finished": true,
-   "mean_time": 46.95,
+   "mean_time": 47.36,
    "rescues_per_race": 0
   },
-  "verdict": "ok (lap time +1.6%)"
+  "verdict": "ok (lap time -2.4%)"
  }
 }

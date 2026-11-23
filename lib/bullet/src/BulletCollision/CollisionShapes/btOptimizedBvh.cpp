@@ -103,6 +103,13 @@ void btOptimizedBvh::build(btStridingMeshInterface* triangles, bool useQuantized
 			btAssert(triangleIndex>=0);
 
 			btQuantizedBvhNode node;
+#ifdef BULLET_SMALL_MEMORY
+			// shared with trees whose leaves are rebuilt on demand
+			m_optimizedTree->quantizeTriangleLeaf(triangle, triangleIndex, node);
+			node.m_escapeIndexOrTriangleIndex = (partId<<(31-MAX_NUM_PARTS_IN_BITS)) | triangleIndex;
+			m_triangleNodes.push_back(node);
+			return;
+#endif
 			btVector3	aabbMin,aabbMax;
 			aabbMin.setValue(btScalar(BT_LARGE_FLOAT),btScalar(BT_LARGE_FLOAT),btScalar(BT_LARGE_FLOAT));
 			aabbMax.setValue(btScalar(-BT_LARGE_FLOAT),btScalar(-BT_LARGE_FLOAT),btScalar(-BT_LARGE_FLOAT)); 
