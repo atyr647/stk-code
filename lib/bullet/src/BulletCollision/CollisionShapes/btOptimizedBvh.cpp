@@ -154,6 +154,25 @@ void btOptimizedBvh::build(btStridingMeshInterface* triangles, bool useQuantized
 
 		QuantizedNodeTriangleCallback	callback(m_quantizedLeafNodes,this);
 
+#ifdef BULLET_SMALL_MEMORY
+		// One leaf per triangle: reserve exactly instead of letting the
+		// array double (up to 2x slack, alive while the tree is built).
+		{
+			int numTriangles = 0;
+			for (int part = 0; part < triangles->getNumSubParts(); part++)
+			{
+				const unsigned char *vertexbase, *indexbase;
+				int numverts, stride, indexstride, numfaces;
+				PHY_ScalarType type, indicestype;
+				triangles->getLockedReadOnlyVertexIndexBase(&vertexbase, numverts,
+					type, stride, &indexbase, indexstride, numfaces, indicestype, part);
+				numTriangles += numfaces;
+				triangles->unLockReadOnlyVertexBase(part);
+			}
+			m_quantizedLeafNodes.reserve(numTriangles);
+		}
+#endif
+
 	
 		triangles->InternalProcessAllTriangles(&callback,m_bvhAabbMin,m_bvhAabbMax);
 

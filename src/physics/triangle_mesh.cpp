@@ -27,6 +27,8 @@
 
 #include "btBulletDynamicsCommon.h"
 
+#include <algorithm>
+#include <cstring>
 #include <fstream>
 
 // -----------------------------------------------------------------------------
@@ -42,12 +44,124 @@ static const bool USE_QUANTIZED_BVH = true;
 static const bool USE_QUANTIZED_BVH = false;
 #endif
 
-TriangleMesh::TriangleMesh(bool can_be_transformed)
 #ifdef STK_LOW_MEMORY
-            : m_mesh(/*use32bitIndices*/true, /*use4componentVertices*/false)
-#else
-            : m_mesh()
+// -----------------------------------------------------------------------------
+static uint32_t hashVertex(const float *v)
+{
+    uint32_t b[3];
+    memcpy(b, v, sizeof(b));
+    uint32_t h = b[0] * 0x9E3779B1u ^ b[1] * 0x85EBCA77u ^ b[2] * 0xC2B2AE3Du;
+    return h ^ (h >> 15);
+}   // hashVertex
+
+// -----------------------------------------------------------------------------
+void CompactTriangleMesh::rebuildLookup(size_t capacity)
+{
+    std::vector<uint32_t>(capacity, 0).swap(m_lookup);
+    const size_t mask = capacity - 1;
+    const uint32_t count = (uint32_t)(m_vertices.size() / 3);
+    for (uint32_t i = 0; i < count; i++)
+    {
+        const float v[3] = { m_vertices[3 * i], m_vertices[3 * i + 1],
+                             m_vertices[3 * i + 2] };
+        size_t slot = hashVertex(v) & mask;
+        while (m_lookup[slot] != 0)
+            slot = (slot + 1) & mask;
+        m_lookup[slot] = i + 1;
+    }
+}   // rebuildLookup
+
+// -----------------------------------------------------------------------------
+uint32_t CompactTriangleMesh::findOrAddVertex(const btVector3 &vertex)
+{
+    const float v[3] = { (float)vertex.getX(), (float)vertex.getY(),
+                         (float)vertex.getZ() };
+    const uint32_t count = (uint32_t)(m_vertices.size() / 3);
+    // Keep the table at most 3/4 full
+    if (4 * (size_t)(count + 1) > 3 * m_lookup.size())
+        rebuildLookup(std::max<size_t>(1024, 2 * m_lookup.size()));
+    const size_t mask = m_lookup.size() - 1;
+    size_t slot = hashVertex(v) & mask;
+    while (m_lookup[slot] != 0)
+    {
+        const size_t o = 3 * (size_t)(m_lookup[slot] - 1);
+        const float other[3] = { m_vertices[o], m_vertices[o + 1],
+                                 m_vertices[o + 2] };
+        if (memcmp(other, v, sizeof(v)) == 0)
+            return m_lookup[slot] - 1;
+        slot = (slot + 1) & mask;
+    }
+    m_vertices.push_back(v[0]);
+    m_vertices.push_back(v[1]);
+    m_vertices.push_back(v[2]);
+    m_lookup[slot] = count + 1;
+    return count;
+}   // findOrAddVertex
+
+// -----------------------------------------------------------------------------
+void CompactTriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
+                                      const btVector3 &t3)
+{
+    if (!m_indices16.empty())
+    {
+        // Adding after finalize(): go back to the build-time layout
+        for (size_t i = 0; i < m_indices16.size(); i++)
+            m_indices32.push_back(m_indices16[i]);
+        m_indices16.clear();
+    }
+    if (m_lookup.empty() && !m_vertices.empty())
+    {
+        size_t capacity = 1024;
+        while (3 * capacity < 4 * (m_vertices.size() / 3 + 1))
+            capacity *= 2;
+        rebuildLookup(capacity);
+    }
+    m_indices32.push_back(findOrAddVertex(t1));
+    m_indices32.push_back(findOrAddVertex(t2));
+    m_indices32.push_back(findOrAddVertex(t3));
+    m_num_triangles++;
+}   // addTriangle
+
+// -----------------------------------------------------------------------------
+void CompactTriangleMesh::finalize()
+{
+    std::vector<uint32_t>().swap(m_lookup);
+    const size_t vertex_count = m_vertices.size() / 3;
+    if (m_indices16.empty() && vertex_count <= 65536)
+    {
+        for (size_t i = 0; i < m_indices32.size(); i++)
+            m_indices16.push_back((uint16_t)m_indices32[i]);
+        m_indices32.clear();
+    }
+    m_indices16.compact();
+    m_indices32.compact();
+    m_vertices.compact();
+
+    const bool use16 = !m_indices16.empty();
+    const PHY_ScalarType index_type = use16 ? PHY_SHORT : PHY_INTEGER;
+    btIndexedMesh mesh;
+    mesh.m_numTriangles        = (int)m_num_triangles;
+    mesh.m_triangleIndexBase   = use16
+                               ? (const unsigned char*)m_indices16.data()
+                               : (const unsigned char*)m_indices32.data();
+    mesh.m_triangleIndexStride = 3 * (use16 ? sizeof(uint16_t)
+                                            : sizeof(uint32_t));
+    mesh.m_numVertices         = (int)vertex_count;
+    mesh.m_vertexBase          = (const unsigned char*)m_vertices.data();
+    mesh.m_vertexStride        = 3 * sizeof(float);
+    mesh.m_indexType           = index_type;
+    mesh.m_vertexType          = PHY_FLOAT;
+    if (m_indexedMeshes.size() == 0)
+        addIndexedMesh(mesh, index_type);
+    else
+        m_indexedMeshes[0] = mesh;
+}   // finalize
+
 #endif
+
+// -----------------------------------------------------------------------------
+TriangleMesh::TriangleMesh(bool can_be_transformed)
+            : m_mesh()
 {
     m_body               = NULL;
     m_free_body          = true;
@@ -111,10 +225,12 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
 #endif
     m_mesh.addTriangle(t1, t2, t3);
 
+#ifndef STK_LOW_MEMORY
     // Area of triangle ABC
     btVector3 edge1 = t2 - t1;
     btVector3 edge2 = t3 - t1;
     m_p1p2p3.push_back(edge1.cross(edge2).length2());
+#endif
 }   // addTriangle
 
 // -----------------------------------------------------------------------------
@@ -133,6 +249,12 @@ void TriangleMesh::createCollisionShape(bool create_collision_object, const char
         m_collision_object = NULL;
         return;
     }
+#ifdef STK_LOW_MEMORY
+    // Release build-time slack before the BVH build, which is the peak
+    m_mesh.finalize();
+    m_triangleIndex2Material.compact();
+    m_normals.compact();
+#endif
     // Now convert the triangle mesh into a static rigid body
     btBvhTriangleMeshShape* bhv_triangle_mesh;
 

@@ -166,6 +166,10 @@ def decimate(mesh, target_tris, lock_border=False, road=None,
         out = _run_meshsimplify(pos, att, weights, all_idx, off, target_tris,
                                 options | PRUNE, lock=lock_near,
                                 target_error=road["far_error"])
+        # Prune deletes whole small components and ignores vertex locks, so
+        # it can take a bridge or a floating platform off the driveline.
+        # Put back every piece that touches the near/road zone.
+        out = _restore_locked_components(pos, off, all_idx, out, lock_near)
         out = _run_meshsimplify(pos, att, weights, out, off, 0, options,
                                 lock=road_m,
                                 target_error=road["near_error"] / extent)
@@ -220,6 +224,50 @@ def decimate(mesh, target_tris, lock_border=False, road=None,
     assert mesh.tri_count > 0, "decimation emptied a mesh"
     spm.recompute_bbox(mesh)
     return mesh
+
+
+def _components(pos, vc, indices):
+    """Connected component id per vertex, joining vertices that share a
+    position (buffers do not share vertices, they meet at equal positions)."""
+    parent = list(range(vc))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a, b):
+        a, b = find(a), find(b)
+        if a != b:
+            parent[a] = b
+    first = {}
+    for v in range(vc):
+        key = bytes(pos[v * 12:v * 12 + 12])
+        if key in first:
+            union(v, first[key])
+        else:
+            first[key] = v
+    for t in range(0, len(indices), 3):
+        union(indices[t], indices[t + 1])
+        union(indices[t], indices[t + 2])
+    return [find(v) for v in range(vc)]
+
+
+def _restore_locked_components(pos, vc, before, after, lock):
+    """Re-add, unchanged, every component of `before` that has a locked
+    vertex and no triangle left in `after`."""
+    comp = _components(pos, vc, before)
+    alive = {comp[i] for i in after}
+    locked = {comp[v] for v in range(vc) if lock[v]}
+    lost = locked - alive
+    if not lost:
+        return after
+    out = list(after)
+    for t in range(0, len(before), 3):
+        if comp[before[t]] in lost:
+            out += before[t:t + 3]
+    return out
 
 
 def load_quads(track_dir):

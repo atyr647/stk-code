@@ -22,6 +22,11 @@ add_definitions(-DSTK_LOW_MEMORY)
 # scripts are small files with short lines; mcpp documents 0x1000/0x4000 as
 # valid sizes.
 add_definitions(-DNBUFF=0x2000)
+# lib/irrlicht: every mesh scene node keeps its own copy of each SMaterial,
+# and each copy carries 8 texture layers. Only layers 0-1 are ever filled
+# (.spm/.b3d materials have at most two textures); the rest is the desktop
+# renderers' business. 2 layers: ~110 bytes less per material copy.
+add_definitions(-D_IRR_MATERIAL_MAX_TEXTURES_=2)
 # lib/irrlicht: switch off loaders/writers nothing on the N64 uses
 # (IrrCompileConfig.h's own NO_* switches). ZIP stays: addons install from it.
 add_definitions(-DNO_IRR_COMPILE_WITH_BMP_LOADER_ -DNO_IRR_COMPILE_WITH_BMP_WRITER_

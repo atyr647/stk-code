@@ -19,6 +19,7 @@
 #ifndef HEADER_TRIANGLE_MESH_HPP
 #define HEADER_TRIANGLE_MESH_HPP
 
+#include <algorithm>
 #include <vector>
 #include "btBulletDynamicsCommon.h"
 
@@ -29,6 +30,132 @@
 
 class Material;
 
+#ifdef STK_LOW_MEMORY
+/** Append-only array for building meshes on memory-constrained targets.
+ *  While it grows it lives in fixed-size chunks, so there is no doubling
+ *  slack and no copy of the whole array on growth; compact() then moves it
+ *  into one exactly-sized block. Indexing works in both states.
+ *  \ingroup physics */
+template<typename T> class ChunkedArray
+{
+    static const unsigned SHIFT = 10;
+    static const size_t   CHUNK = size_t(1) << SHIFT;
+    std::vector<T*> m_chunks;
+    T*              m_flat;
+    size_t          m_size;
+    ChunkedArray(const ChunkedArray&) = delete;
+    ChunkedArray& operator=(const ChunkedArray&) = delete;
+    void freeChunks()
+    {
+        for (T* c : m_chunks)
+            delete [] c;
+        std::vector<T*>().swap(m_chunks);
+    }
+public:
+    ChunkedArray() : m_flat(NULL), m_size(0) {}
+    ~ChunkedArray() { clear(); }
+    void clear()
+    {
+        freeChunks();
+        delete [] m_flat;
+        m_flat = NULL;
+        m_size = 0;
+    }
+    size_t size() const { return m_size; }
+    bool   empty() const { return m_size == 0; }
+    void push_back(const T &v)
+    {
+        if (m_flat)
+        {
+            // Growing again after compact(): back to chunks
+            T* flat = m_flat;
+            const size_t n = m_size;
+            m_flat = NULL;
+            m_size = 0;
+            for (size_t i = 0; i < n; i++)
+                push_back(flat[i]);
+            delete [] flat;
+        }
+        if ((m_size >> SHIFT) == m_chunks.size())
+            m_chunks.push_back(new T[CHUNK]);
+        m_chunks[m_size >> SHIFT][m_size & (CHUNK - 1)] = v;
+        m_size++;
+    }
+    const T& operator[](size_t i) const
+    {
+        return m_flat ? m_flat[i] : m_chunks[i >> SHIFT][i & (CHUNK - 1)];
+    }
+    T& operator[](size_t i)
+    {
+        return m_flat ? m_flat[i] : m_chunks[i >> SHIFT][i & (CHUNK - 1)];
+    }
+    /** Moves the contents into a single exactly-sized block. */
+    void compact()
+    {
+        if (m_flat || m_size == 0)
+            return;
+        T* flat = new T[m_size];
+        for (size_t c = 0; c < m_chunks.size(); c++)
+        {
+            const size_t first = c << SHIFT;
+            const size_t n = std::min(CHUNK, m_size - first);
+            std::copy(m_chunks[c], m_chunks[c] + n, flat + first);
+            delete [] m_chunks[c];
+            m_chunks[c] = NULL;
+        }
+        std::vector<T*>().swap(m_chunks);
+        m_flat = flat;
+    }
+    /** Contiguous data, only valid after compact(). */
+    const T* data() const { return m_flat; }
+};
+
+/** Triangle storage for memory-constrained targets (the N64 port), used in
+ *  place of btTriangleMesh. btTriangleMesh keeps three unshared vertices per
+ *  triangle; here vertices that are bit-for-bit identical are shared, kept as
+ *  3 floats, and indexed with 16-bit indices whenever they fit. Every
+ *  triangle keeps exactly its original coordinates and its original index,
+ *  so Bullet sees the same triangles in the same order.
+ *  \ingroup physics */
+class CompactTriangleMesh : public btTriangleIndexVertexArray
+{
+    ChunkedArray<float>    m_vertices;
+    ChunkedArray<uint32_t> m_indices32;
+    ChunkedArray<uint16_t> m_indices16;
+    /** Vertex lookup, only alive while triangles are added: open addressing,
+     *  each entry is a vertex index + 1 (0 means empty). */
+    std::vector<uint32_t> m_lookup;
+    unsigned int          m_num_triangles;
+
+    uint32_t findOrAddVertex(const btVector3 &v);
+    void     rebuildLookup(size_t capacity);
+    uint32_t getIndex(unsigned int i) const
+    {
+        return m_indices16.empty() ? m_indices32[i] : m_indices16[i];
+    }
+public:
+    CompactTriangleMesh() : m_num_triangles(0) {}
+    void addTriangle(const btVector3 &t1, const btVector3 &t2,
+                     const btVector3 &t3);
+    /** Drops the build-time lookup, narrows the indices if possible and
+     *  hands the arrays to Bullet. Must be called before Bullet uses the
+     *  mesh, and again after adding more triangles. */
+    void finalize();
+    int  getNumTriangles() const { return (int)m_num_triangles; }
+    void getTriangle(unsigned int indx, btVector3 *p1, btVector3 *p2,
+                     btVector3 *p3) const
+    {
+        const ChunkedArray<float> &v = m_vertices;
+        const size_t a = 3 * getIndex(3 * indx    );
+        const size_t b = 3 * getIndex(3 * indx + 1);
+        const size_t c = 3 * getIndex(3 * indx + 2);
+        *p1 = btVector3(v[a], v[a + 1], v[a + 2]);
+        *p2 = btVector3(v[b], v[b + 1], v[b + 2]);
+        *p3 = btVector3(v[c], v[c + 1], v[c + 2]);
+    }
+};
+#endif
+
 /**
  * \brief A special class to store a triangle mesh with a separate material per triangle.
  * \ingroup physics
@@ -37,13 +164,21 @@ class TriangleMesh
 {
 private:
     UserPointer                  m_user_pointer;
+#ifdef STK_LOW_MEMORY
+    ChunkedArray<const Material*> m_triangleIndex2Material;
+#else
     std::vector<const Material*> m_triangleIndex2Material;
+#endif
     btRigidBody                 *m_body;
     /** Keep track if the physical body was created here or not. */
     bool                         m_free_body;
 
     btCollisionObject           *m_collision_object;
+#ifdef STK_LOW_MEMORY
+    CompactTriangleMesh          m_mesh;
+#else
     btTriangleMesh               m_mesh;
+#endif
     btVector3 dummy1, dummy2;
     btDefaultMotionState        *m_motion_state;
     btCollisionShape            *m_collision_shape;
@@ -52,14 +187,17 @@ private:
     /** The three normals for each triangle, packed 10:10:10:2 the way .spm
      *  files store normals (MiniGLM::compressVector3): 12 bytes per triangle
      *  instead of 48. */
-    std::vector<uint32_t>       m_normals;
+    ChunkedArray<uint32_t>      m_normals;
 #else
     /** The three normals for each triangle. */
     std::vector<btVector3>      m_normals;
 #endif
 
-    /** Pre-compute value used in smoothing. */
+#ifndef STK_LOW_MEMORY
+    /** Pre-compute value used in smoothing. (Low-memory builds recompute it
+     *  from the triangle instead, see getP1P2P3.) */
     std::vector<float>          m_p1p2p3;
+#endif
 
     /** If the rigid body can be transformed (which means that normalising
      *  the normals need to update the vertices and normals used according
@@ -128,14 +266,10 @@ public:
     void getTriangle(unsigned int indx, btVector3 *p1, btVector3 *p2,
                      btVector3 *p3) const
     {
-        const IndexedMeshArray &m = m_mesh.getIndexedMeshArray();
 #ifdef STK_LOW_MEMORY
-        // 3-float vertices (see the TriangleMesh constructor)
-        const float *p = &(((const float*)(m[0].m_vertexBase))[9*indx]);
-        *p1 = btVector3(p[0], p[1], p[2]);
-        *p2 = btVector3(p[3], p[4], p[5]);
-        *p3 = btVector3(p[6], p[7], p[8]);
+        m_mesh.getTriangle(indx, p1, p2, p3);
 #else
+        const IndexedMeshArray &m = m_mesh.getIndexedMeshArray();
         btVector3 *p = &(((btVector3*)(m[0].m_vertexBase))[3*indx]);
         *p1 = p[0];
         *p2 = p[1];
@@ -174,8 +308,17 @@ public:
      *  smoothing the normals. */
     float getP1P2P3(unsigned int indx) const
     {
+#ifdef STK_LOW_MEMORY
+        // Same arithmetic as addTriangle used to store, on the same floats.
+        btVector3 t1, t2, t3;
+        getTriangle(indx, &t1, &t2, &t3);
+        btVector3 edge1 = t2 - t1;
+        btVector3 edge2 = t3 - t1;
+        return edge1.cross(edge2).length2();
+#else
         assert(indx < m_p1p2p3.size());
         return m_p1p2p3[indx];
+#endif
     }
     // ------------------------------------------------------------------------
     void copyFrom(const TriangleMesh& tm)
