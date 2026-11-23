@@ -64,8 +64,11 @@ static int write_debug(char *data, unsigned int len)
 }
 #endif
 
+extern "C" void stk_n64_fpu_setup(void);
+
 int main()
 {
+    stk_n64_fpu_setup();
     debug_init_isviewer();
     debug_init_usblog();
     debugf("[n64] main reached (static initialisation done)\n");

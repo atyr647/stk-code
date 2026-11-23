@@ -3,6 +3,7 @@
  * key table, and the clock conversion for timed waits. */
 #include <bits/gthr-default.h>
 #include <kernel.h>
+#include <cop1.h>
 #include <debug.h>
 #include <errno.h>
 #include <stdint.h>
@@ -107,9 +108,25 @@ static void run_key_dtors(void)
     }
 }
 
+/* The FPU mode STK expects, as on desktop CPUs: IEEE results (inf, NaN)
+ * instead of traps. libdragon's debug builds trap on overflow, division by
+ * zero and invalid operations (a zero-area triangle's normal divides by
+ * zero; desktop code relies on getting NaN there). Denormals are flushed
+ * (FS): the VR4300 has no hardware for them and would raise an unmaskable
+ * exception. New kernel threads start with a zeroed FCR31, i.e. without
+ * FS, so every thread sets this itself. */
+void stk_n64_fpu_setup(void)
+{
+    uint32_t fcr31 = C1_FCR31();
+    fcr31 &= ~(C1_ENABLE_MASK | C1_CAUSE_MASK);
+    fcr31 |= C1_FCR31_FS;
+    C1_WRITE_FCR31(fcr31);
+}
+
 static int trampoline(void *arg)
 {
     struct __stk_n64_thread *t = arg;
+    stk_n64_fpu_setup();
     /* Detach from the kernel's point of view straight away (we are certainly
      * still running, so this is always legal): the kernel frees the kthread
      * when it returns, and nobody ever calls kthread_join(). */
