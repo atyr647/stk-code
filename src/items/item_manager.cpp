@@ -103,6 +103,13 @@ void ItemManager::loadDefaultItemMeshes()
 #endif
         mesh->grab();
         m_item_mesh[i]            = mesh;
+#if defined(SERVER_ONLY) && defined(STK_LOW_MEMORY)
+        // A server only hands this mesh to scene nodes, never reads it:
+        // release its vertices. It leaves the mesh cache too, so that a
+        // track using the same model file as an object loads its own copy.
+        mesh->freeMeshVertexBuffer();
+        irr_driver->removeMeshFromCache(mesh);
+#endif
         node->get("glow", &(m_glow_color[i]));
 
         std::string lowres_model_filename;
@@ -117,6 +124,10 @@ void ItemManager::loadDefaultItemMeshes()
             SP::uploadSPM(m_item_lowres_mesh[i]);
 #endif
             m_item_lowres_mesh[i]->grab();
+#if defined(SERVER_ONLY) && defined(STK_LOW_MEMORY)
+            m_item_lowres_mesh[i]->freeMeshVertexBuffer();
+            irr_driver->removeMeshFromCache(m_item_lowres_mesh[i]);
+#endif
         }
         std::string icon = "icon-" + item_names[(ItemState::ItemType)i] + ".png";
         if (preloadIcon(icon))
