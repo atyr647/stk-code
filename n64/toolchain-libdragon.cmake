@@ -58,7 +58,16 @@ set(CMAKE_CXX_STANDARD_LIBRARIES "-ldragon -lc -lm -ldragonsys")
 set(CMAKE_C_STANDARD_LIBRARIES   "-ldragon -lc -lm -ldragonsys")
 set(CMAKE_EXECUTABLE_SUFFIX ".elf")
 
-set(CMAKE_FIND_ROOT_PATH ${N64_INST}/mips64-elf)
+# libraries built for libdragon (n64/build_n64_deps.sh,
+# n64/build_n64_client_deps.sh) live in N64_DEPS_PREFIX
+if(NOT N64_DEPS_PREFIX)
+    if(DEFINED ENV{N64_DEPS_PREFIX})
+        set(N64_DEPS_PREFIX "$ENV{N64_DEPS_PREFIX}")
+    else()
+        set(N64_DEPS_PREFIX "/opt/n64deps")
+    endif()
+endif()
+set(CMAKE_FIND_ROOT_PATH ${N64_INST}/mips64-elf ${N64_DEPS_PREFIX})
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
