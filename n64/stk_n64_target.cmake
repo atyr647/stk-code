@@ -24,16 +24,20 @@ foreach(opt STK_N64_LOG_HEAP STK_N64_PROFILE)
 endforeach()
 target_link_libraries(supertuxkart stk_n64_compat)
 # The build is -Oz (code shares the 8 MB with everything else), but at -Oz
-# GCC calls even btVector3::operator+= out of line. Physics is most of a
-# race's CPU time: Bullet and STK's physics code get -O2.
-option(STK_N64_FAST_PHYSICS "Compile Bullet and src/physics with -O2" ON)
+# GCC calls even btVector3::operator+= out of line. Bullet and src/physics,
+# most of a race's CPU time, are compiled at STK_N64_PHYSICS_OPT instead.
+# Measured in ares (n64/tools/n64_profile.py, seeded race): more is not
+# better here: the VR4300's instruction cache is 16 KB, and -Os on STK's
+# own per-frame code (karts, AI, tracks) made the race 8% slower than -Oz.
+option(STK_N64_FAST_PHYSICS "Compile Bullet and src/physics at STK_N64_PHYSICS_OPT" ON)
+set(STK_N64_PHYSICS_OPT "-O2" CACHE STRING "Optimisation level for Bullet and src/physics")
 if(STK_N64_FAST_PHYSICS)
     foreach(lib bulletmath bulletcollision bulletdynamics)
-        target_compile_options(${lib} PRIVATE -O2)
+        target_compile_options(${lib} PRIVATE ${STK_N64_PHYSICS_OPT})
     endforeach()
     file(GLOB STK_N64_PHYSICS_SOURCES ${PROJECT_SOURCE_DIR}/src/physics/*.cpp)
     set_property(SOURCE ${STK_N64_PHYSICS_SOURCES} APPEND PROPERTY
-        COMPILE_OPTIONS -O2)
+        COMPILE_OPTIONS ${STK_N64_PHYSICS_OPT})
 endif()
 target_link_options(supertuxkart PRIVATE
     "-Wl,-Map=${CMAKE_BINARY_DIR}/supertuxkart.map")

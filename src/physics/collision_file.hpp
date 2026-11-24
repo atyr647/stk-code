@@ -127,11 +127,23 @@ struct CollisionTriangle
 };   // CollisionTriangle
 
 // ----------------------------------------------------------------------------
-/** Read-only, set-associative page cache over a file. */
+/** Read-only, set-associative page cache over a file.
+ *
+ *  Reads go through cursors: a cursor remembers the cache slot of the page
+ *  it last used, so a stream of reads (tree nodes, triangle records,
+ *  vertices) that stays in a page costs a compare, even when other streams
+ *  are read in between. A cursor's slot is checked against the slot's tag
+ *  before use: a page evicted by another stream is never read stale. */
 class FilePageCache
 {
 public:
     static const unsigned WAYS      = 4;
+    struct Cursor
+    {
+        uint32_t m_page;   // page number + 1 the slot held when last used
+        unsigned m_slot;
+        Cursor() : m_page(0), m_slot(0) {}
+    };
 private:
     FILE                 *m_file;
     unsigned              m_page_size;   // power of two
@@ -142,73 +154,80 @@ private:
     std::vector<uint32_t> m_stamps;
     uint32_t              m_clock;
     mutable unsigned      m_hits, m_misses;
-    /** Most recently used page: most reads land there. */
-    uint32_t              m_last_page;
-    const uint8_t        *m_last_data;
-    const uint8_t* page(uint32_t page_number);
-    void readSlow(uint32_t offset, void *dst, uint32_t size);
+    Cursor                m_cursor;    // for read() and peek()
+    /** The slot holding page_number, reading it in on a miss. */
+    unsigned slot(uint32_t page_number)
+    {
+        const unsigned first = (page_number & (m_sets - 1)) * WAYS;
+        for (unsigned w = first; w < first + WAYS; w++)
+        {
+            if (m_tags[w] == page_number + 1)
+            {
+                m_hits++;
+                m_stamps[w] = ++m_clock;
+                return w;
+            }
+        }
+        return load(page_number);
+    }
+    /** Reads page_number into the least recently used slot of its set. */
+    unsigned load(uint32_t page_number);
+    void readSlow(Cursor &c, uint32_t offset, void *dst, uint32_t size);
 public:
     FilePageCache() : m_file(NULL), m_page_size(1024), m_file_size(0),
-                      m_sets(0), m_clock(0), m_hits(0), m_misses(0),
-                      m_last_page(~0u), m_last_data(NULL) {}
+                      m_sets(0), m_clock(0), m_hits(0), m_misses(0) {}
     ~FilePageCache();
     bool open(const std::string &path, unsigned cache_bytes,
               unsigned page_size);
     unsigned getPageSize() const { return m_page_size; }
     unsigned getCacheBytes() const { return (unsigned)m_pages.size(); }
-    void read(uint32_t offset, void *dst, uint32_t size)
+    /** The bytes at offset, in place: valid until the next read through any
+     *  cursor. The caller guarantees they do not cross a page. */
+    const uint8_t* at(Cursor &c, uint32_t offset)
     {
-        const uint32_t in_page = offset & (m_page_size - 1);
-        if (offset / m_page_size == m_last_page &&
-            in_page + size <= m_page_size)
-        {
-            m_hits++;
-            memcpy(dst, m_last_data + in_page, size);
-            return;
-        }
-        readSlow(offset, dst, size);
-    }
-    /** The bytes at offset, in place: valid until the next read. The caller
-     *  guarantees they do not cross a page. */
-    const uint8_t* at(uint32_t offset)
-    {
-        const uint32_t page_number = offset / m_page_size;
-        if (page_number == m_last_page)
+        // a cursor hit does not refresh the slot's LRU stamp: a page in use
+        // is stamped whenever a stream enters it through slot()
+        const uint32_t tag = offset / m_page_size + 1;
+        if (tag == c.m_page && m_tags[c.m_slot] == tag)
             m_hits++;
         else
         {
-            m_last_page = page_number;
-            m_last_data = page(page_number);
+            c.m_slot = slot(tag - 1);
+            c.m_page = tag;
         }
-        return m_last_data + (offset & (m_page_size - 1));
+        return &m_pages[c.m_slot * m_page_size +
+                        (offset & (m_page_size - 1))];
+    }
+    const uint8_t* at(uint32_t offset) { return at(m_cursor, offset); }
+    void read(Cursor &c, uint32_t offset, void *dst, uint32_t size)
+    {
+        if ((offset & (m_page_size - 1)) + size <= m_page_size)
+            memcpy(dst, at(c, offset), size);
+        else
+            readSlow(c, offset, dst, size);
+    }
+    void read(uint32_t offset, void *dst, uint32_t size)
+    {
+        read(m_cursor, offset, dst, size);
     }
     /** read() for a size known at compile time: the copy is inlined. */
     template<unsigned N>
-    void readFixed(uint32_t offset, void *dst)
+    void readFixed(Cursor &c, uint32_t offset, void *dst)
     {
         if ((offset & (m_page_size - 1)) + N <= m_page_size)
-            memcpy(dst, at(offset), N);
+            memcpy(dst, at(c, offset), N);
         else
-            readSlow(offset, dst, N);
+            readSlow(c, offset, dst, N);
     }
-    /** The bytes at offset as a pointer into the cache when they lie in
-     *  one page (valid until the next read), else copied to bounce. */
-    const uint8_t* peek(uint32_t offset, uint32_t size, uint8_t *bounce)
+    /** The bytes at offset in place when they lie in one page (valid until
+     *  the next read), else copied to bounce. */
+    const uint8_t* peek(Cursor &c, uint32_t offset, uint32_t size,
+                        uint8_t *bounce)
     {
-        const uint32_t in_page = offset & (m_page_size - 1);
-        if (in_page + size > m_page_size)
-        {
-            readSlow(offset, bounce, size);
-            return bounce;
-        }
-        if (offset / m_page_size != m_last_page)
-        {
-            m_last_page = offset / m_page_size;
-            m_last_data = page(m_last_page);
-        }
-        else
-            m_hits++;
-        return m_last_data + in_page;
+        if ((offset & (m_page_size - 1)) + size <= m_page_size)
+            return at(c, offset);
+        readSlow(c, offset, bounce, size);
+        return bounce;
     }
     uint32_t getFileSize() const { return m_file_size; }
     unsigned getHits() const { return m_hits; }
@@ -222,6 +241,9 @@ class CollisionFile : public btStridingMeshInterface,
                       public btExternalBvhNodes
 {
     mutable FilePageCache m_cache;
+    /** One cursor per stream of reads (see FilePageCache). */
+    mutable FilePageCache::Cursor m_node_cursor, m_record_cursor,
+                                  m_vertex_cursor, m_normal_cursor;
     CollisionFileHeader   m_header;
     /** Recently decoded triangles (direct mapped): a triangle is usually
      *  decoded for its leaf box, then again for the narrow phase, and
@@ -301,6 +323,8 @@ public:
     // btExternalBvhNodes
     virtual void fetchNode(int index, btQuantizedBvhNode &node) const;
     virtual const btQuantizedBvhNode* nodeAt(int index) const;
+    virtual const btQuantizedBvhNode* nodeSpan(int index, int *first,
+                                               int *count) const;
     virtual void fetchLeaf(int triangle, btQuantizedBvhNode &node) const;
     virtual void fetchBucket(int first, int count,
                              btQuantizedBvhNode *leaves) const;

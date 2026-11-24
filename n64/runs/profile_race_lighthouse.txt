@@ -1,6 +1,10 @@
 # Headless AI race (SERVER_ONLY build): 4 karts, 1 lap of Lighthouse.
+# --seed: STK otherwise seeds with time(0), on the N64 the seconds since
+# boot, so any change in startup time changes the AI's choices and runs
+# cannot be compared frame for frame.
 --track=lighthouse
 --numkarts=4
 --kart=tux
 --profile-laps=1
 --unlock-all
+--seed=1

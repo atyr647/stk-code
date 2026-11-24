@@ -22,19 +22,37 @@ subject to the following restrictions:
 #define RAYAABB2
 
 #ifdef BULLET_SMALL_MEMORY
-// Stackless walks over an external node source: each step asks the source
-// for the node (nodeAt: in place where possible, valid until the source is
-// next used) and only the index advances. A node's fields are all read
+// Stackless walks over an external node source: each step takes the node
+// from the span of nodes the source last handed out (nodeSpan: in place,
+// valid until the source is next used), asking for a new span when the
+// index leaves it. Callbacks and bucket expansion use the source, so the
+// span is dropped after them (BT_WALK_DROP). A node's fields are all read
 // before the walk calls back into anything: the escape index only in the
 // branch where no callback ran.
 #define BT_WALK_ROOT(startIndex) \
-	const btQuantizedBvhNode* rootNode = m_externalNodes ? 0 : &m_quantizedContiguousNodes[startIndex];
-#define BT_WALK_FETCH() if (m_externalNodes) rootNode = m_externalNodes->nodeAt(curIndex)
+	const btQuantizedBvhNode* rootNode = m_externalNodes ? 0 : &m_quantizedContiguousNodes[startIndex]; \
+	const btQuantizedBvhNode* spanBase = 0; \
+	int spanFirst = 0, spanEnd = 0;
+#define BT_WALK_FETCH() \
+	if (m_externalNodes) \
+	{ \
+		if (curIndex >= spanFirst && curIndex < spanEnd) \
+			rootNode = spanBase + (curIndex - spanFirst); \
+		else \
+		{ \
+			int spanCount; \
+			rootNode = m_externalNodes->nodeSpan(curIndex, &spanFirst, &spanCount); \
+			spanBase = rootNode - (curIndex - spanFirst); \
+			spanEnd = spanFirst + spanCount; \
+		} \
+	}
+#define BT_WALK_DROP() spanEnd = spanFirst
 #define BT_WALK_ADVANCE(n) if (!m_externalNodes) rootNode += (n)
 #else
 #define BT_WALK_ROOT(startIndex) \
 	const btQuantizedBvhNode* rootNode = &m_quantizedContiguousNodes[startIndex];
 #define BT_WALK_FETCH()
+#define BT_WALK_DROP()
 #define BT_WALK_ADVANCE(n) rootNode += (n)
 #endif
 
@@ -726,6 +744,7 @@ void	btQuantizedBvh::walkStacklessQuantizedTreeAgainstRay(btNodeOverlapCallback*
 					if (btRayAabb2 (raySource, rayDirection, sign, leafBounds, leafParam, 0.0f, lambda_max))
 						nodeCallback->processNode(0, first + i);
 				}
+				BT_WALK_DROP();
 			}
 			else
 #endif
@@ -809,6 +828,7 @@ void	btQuantizedBvh::walkStacklessQuantizedTree(btNodeOverlapCallback* nodeCallb
 					if (testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,leaf.m_quantizedAabbMin,leaf.m_quantizedAabbMax))
 						nodeCallback->processNode(0, first + i);
 				}
+				BT_WALK_DROP();
 			}
 			else
 #endif

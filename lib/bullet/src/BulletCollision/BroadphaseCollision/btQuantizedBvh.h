@@ -191,6 +191,17 @@ public:
 		fetchNode(nodeIndex, m_scratch);
 		return &m_scratch;
 	}
+	///The node and its neighbours stored with it: nodes *first to
+	///*first + *count - 1 (which include nodeIndex) are at
+	///result - (nodeIndex - *first) onwards. Valid like nodeAt(). The walks
+	///step through such a span without calling the source, and ask again
+	///when they leave it or after anything else used the source.
+	virtual const btQuantizedBvhNode* nodeSpan(int nodeIndex, int* first, int* count) const
+	{
+		*first = nodeIndex;
+		*count = 1;
+		return nodeAt(nodeIndex);
+	}
 	virtual void fetchLeaf(int triangleIndex, btQuantizedBvhNode& node) const = 0;
 	///The leaves of a whole bucket (count <= BUCKET_MAX) at once; sources
 	///that can keep decoded buckets around override this.

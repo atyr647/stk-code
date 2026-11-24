@@ -68,18 +68,12 @@ bool FilePageCache::open(const std::string &path, unsigned cache_bytes,
 }   // open
 
 // ----------------------------------------------------------------------------
-const uint8_t* FilePageCache::page(uint32_t page_number)
+unsigned FilePageCache::load(uint32_t page_number)
 {
     const unsigned first = (page_number & (m_sets - 1)) * WAYS;
     unsigned victim = first;
-    for (unsigned w = first; w < first + WAYS; w++)
+    for (unsigned w = first + 1; w < first + WAYS; w++)
     {
-        if (m_tags[w] == page_number + 1)
-        {
-            m_hits++;
-            m_stamps[w] = ++m_clock;
-            return &m_pages[w * m_page_size];
-        }
         if (m_stamps[w] < m_stamps[victim])
             victim = w;
     }
@@ -94,25 +88,24 @@ const uint8_t* FilePageCache::page(uint32_t page_number)
     }
     m_tags[victim] = page_number + 1;
     m_stamps[victim] = ++m_clock;
-    return dst;
-}   // page
+    return victim;
+}   // load
 
 // ----------------------------------------------------------------------------
-void FilePageCache::readSlow(uint32_t offset, void *dst, uint32_t size)
+void FilePageCache::readSlow(Cursor &c, uint32_t offset, void *dst,
+                             uint32_t size)
 {
     uint8_t *out = (uint8_t*)dst;
     while (size > 0)
     {
         const uint32_t in_page = offset % m_page_size;
         const uint32_t n = std::min(size, m_page_size - in_page);
-        m_last_page = offset / m_page_size;
-        m_last_data = page(m_last_page);
-        memcpy(out, m_last_data + in_page, n);
+        memcpy(out, at(c, offset), n);
         out += n;
         offset += n;
         size -= n;
     }
-}   // read
+}   // readSlow
 
 // ============================================================================
 CollisionFile* CollisionFile::open(const std::string &path,
@@ -210,7 +203,8 @@ void CollisionFile::readRecord(unsigned triangle, uint32_t *vertices,
 {
     uint8_t bounce[32];
     const unsigned size = m_header.m_record_size;
-    const uint8_t *r = m_cache.peek(m_header.m_off_records + triangle * size,
+    const uint8_t *r = m_cache.peek(m_record_cursor,
+                                    m_header.m_off_records + triangle * size,
                                     size, bounce);
     const unsigned vs = m_header.m_vertex_index_size;
     for (unsigned k = 0; k < 3; k++)
@@ -241,7 +235,8 @@ void CollisionFile::readTriangle(unsigned triangle, btVector3 *p1,
         readRecord(triangle, v, n, &m);
         for (unsigned k = 0; k < 3; k++)
         {
-            m_cache.readFixed<12>(m_header.m_off_vertices + 12 * v[k],
+            m_cache.readFixed<12>(m_vertex_cursor,
+                                  m_header.m_off_vertices + 12 * v[k],
                                   &d.m_vertices[3 * k]);
         }
         d.m_triangle = (int)triangle;
@@ -260,7 +255,8 @@ void CollisionFile::readNormals(unsigned triangle, uint32_t *normals) const
     unsigned m;
     readRecord(triangle, v, n, &m);
     for (unsigned k = 0; k < 3; k++)
-        m_cache.readFixed<4>(m_header.m_off_normals + 4 * n[k], &normals[k]);
+        m_cache.readFixed<4>(m_normal_cursor,
+                             m_header.m_off_normals + 4 * n[k], &normals[k]);
 }   // readNormals
 
 // ----------------------------------------------------------------------------
@@ -276,7 +272,7 @@ unsigned CollisionFile::readMaterial(unsigned triangle) const
 // ----------------------------------------------------------------------------
 void CollisionFile::fetchNode(int index, btQuantizedBvhNode &node) const
 {
-    m_cache.readFixed<sizeof(btQuantizedBvhNode)>(
+    m_cache.readFixed<sizeof(btQuantizedBvhNode)>(m_node_cursor,
         m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode), &node);
 }   // fetchNode
 
@@ -285,9 +281,30 @@ const btQuantizedBvhNode* CollisionFile::nodeAt(int index) const
 {
     // Nodes start 16-byte aligned and pages are a multiple of 16 bytes
     // (checked in open): a node never crosses a page.
-    return (const btQuantizedBvhNode*)m_cache.at(
+    return (const btQuantizedBvhNode*)m_cache.at(m_node_cursor,
         m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode));
 }   // nodeAt
+
+// ----------------------------------------------------------------------------
+const btQuantizedBvhNode* CollisionFile::nodeSpan(int index, int *first,
+                                                  int *count) const
+{
+    // the nodes of index's page
+    const uint32_t offset =
+        m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode);
+    const uint32_t page_start = offset & ~(m_cache.getPageSize() - 1);
+    const int per_page = m_cache.getPageSize() / sizeof(btQuantizedBvhNode);
+    int f = page_start <= m_header.m_off_nodes ? 0 :
+        (int)((page_start - m_header.m_off_nodes) / sizeof(btQuantizedBvhNode));
+    int end = f + per_page - (page_start < m_header.m_off_nodes ?
+        (int)((m_header.m_off_nodes - page_start) / sizeof(btQuantizedBvhNode))
+        : 0);
+    if (end > (int)m_header.m_num_nodes)
+        end = (int)m_header.m_num_nodes;
+    *first = f;
+    *count = end - f;
+    return nodeAt(index);
+}   // nodeSpan
 
 // ----------------------------------------------------------------------------
 void CollisionFile::fetchLeaf(int triangle, btQuantizedBvhNode &node) const
@@ -319,8 +336,13 @@ void CollisionFile::fetchBucket(int first, int count,
     }
     else
         m_bucket_hits++;
-    for (int i = 0; i < count; i++)
-        leaves[i] = b.m_leaves[i];
+    // word by word: a struct assignment becomes a memcpy call here
+    static_assert(sizeof(btQuantizedBvhNode) == 16, "node layout");
+    typedef uint32_t __attribute__((may_alias)) word;
+    const word *src = (const word*)b.m_leaves;
+    word *dst = (word*)leaves;
+    for (int i = 0; i < 4 * count; i++)
+        dst[i] = src[i];
 }   // fetchBucket
 
 // ----------------------------------------------------------------------------
