@@ -1,0 +1,18 @@
+diff --git a/src/kernel/kernel.c b/src/kernel/kernel.c
+index 04e4a68..edcde2c 100644
+--- a/src/kernel/kernel.c
++++ b/src/kernel/kernel.c
+@@ -92,7 +92,13 @@ void __kthread_boot(void)
+ {
+ 	// Initialize GP register. This is the same as done in the entrypoint
+ 	// and is also used by the backtrace code as marker to stop walking.
++	// GP already holds this value (kthread_new copies it into the initial
++	// register block), and "la" is two instructions: an interrupt taken
++	// between them would run its handlers with half a pointer in GP. Keep
++	// interrupts out of that window.
++	disable_interrupts();
+ 	asm volatile ("la $gp, _gp");
++	enable_interrupts();
+ 	int res = th_cur->user_entry(th_cur->user_data);
+ 	if (DEBUG_KERNEL) debugf("thread end: %s[%p] res=%d\n", th_cur->name, th_cur, res);
+ 	kthread_exit(res);

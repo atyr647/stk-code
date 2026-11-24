@@ -95,3 +95,6 @@ lib/libadrenotools
 lib/mesa
 
 .DS_Store
+
+# libdragon fixes the N64 build applies (n64/build_libdragon.sh)
+!n64/patches/*.patch

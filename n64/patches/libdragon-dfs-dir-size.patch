@@ -1,0 +1,78 @@
+diff --git a/src/dragonfs.c b/src/dragonfs.c
+index 03c8109..195f993 100644
+--- a/src/dragonfs.c
++++ b/src/dragonfs.c
+@@ -589,7 +589,7 @@ int dfs_chdir(const char * const path)
+     return __dfs_chdir(path);
+ }
+ 
+-static int __dfs_findfirst(const char * const path, char *buf, pi_addr_t *next_entry)
++static int __dfs_findfirst(const char * const path, char *buf, pi_addr_t *next_entry, int64_t *size)
+ {
+     pi_addr_t dirent;
+     int ret = recurse_path(path, WALK_OPEN, &dirent, TYPE_DIR);
+@@ -621,10 +621,15 @@ static int __dfs_findfirst(const char * const path, char *buf, pi_addr_t *next_e
+     /* Set up directory to point to next entry */
+     *next_entry = get_next_entry(t_node);
+ 
++    if(size)
++    {
++        *size = FILETYPE(get_flags(t_node)) == FLAGS_FILE ? (int64_t)get_size(t_node) : -1;
++    }
++
+     return get_flags(t_node);
+ }
+ 
+-static int __dfs_findnext(char *buf, pi_addr_t *next_entry)
++static int __dfs_findnext(char *buf, pi_addr_t *next_entry, int64_t *size)
+ {
+     if(!*next_entry)
+     {
+@@ -644,6 +649,11 @@ static int __dfs_findnext(char *buf, pi_addr_t *next_entry)
+     /* Set up directory to point to next entry */
+     *next_entry = get_next_entry(t_node);
+ 
++    if(size)
++    {
++        *size = FILETYPE(get_flags(t_node)) == FLAGS_FILE ? (int64_t)get_size(t_node) : -1;
++    }
++
+     return get_flags(t_node);
+ }
+ 
+@@ -662,7 +672,7 @@ static int __dfs_findnext(char *buf, pi_addr_t *next_entry)
+  */
+ int dfs_dir_findfirst(const char * const path, char *buf)
+ {
+-    return __dfs_findfirst(path, buf, &next_entry);
++    return __dfs_findfirst(path, buf, &next_entry, NULL);
+ }
+ 
+ /**
+@@ -677,7 +687,7 @@ int dfs_dir_findfirst(const char * const path, char *buf)
+  */
+ int dfs_dir_findnext(char *buf)
+ {
+-    return __dfs_findnext(buf, &next_entry);
++    return __dfs_findnext(buf, &next_entry, NULL);
+ }
+ 
+ static bool can_use_hash(const char *path)
+@@ -1268,7 +1278,7 @@ static int __close( void *file )
+ static int __findfirst( char *path, dir_t *dir )
+ {
+     /* Grab first entry, return if bad */
+-    int flags = __dfs_findfirst( path, dir->d_name, &dir->d_cookie );
++    int flags = __dfs_findfirst( path, dir->d_name, &dir->d_cookie, &dir->d_size );
+     switch (flags) {
+         case FLAGS_FILE:
+             dir->d_type = DT_REG;
+@@ -1294,7 +1304,7 @@ static int __findfirst( char *path, dir_t *dir )
+  */
+ static int __findnext( const char * path, dir_t *dir )
+ {
+-    switch (__dfs_findnext( dir->d_name, &dir->d_cookie )) {
++    switch (__dfs_findnext( dir->d_name, &dir->d_cookie, &dir->d_size )) {
+         case FLAGS_FILE:
+             dir->d_type = DT_REG;
+             return 0;
