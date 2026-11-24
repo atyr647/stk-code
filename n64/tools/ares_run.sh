@@ -28,7 +28,12 @@ done
 
 DISP=""
 for d in $(seq 90 119); do
-    [ -e /tmp/.X$d-lock ] && continue
+    if [ -e /tmp/.X$d-lock ]; then
+        # a lock whose X server is gone (killed runs leave them) is free
+        pid=$(tr -d ' ' < /tmp/.X$d-lock 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then continue; fi
+        rm -f /tmp/.X$d-lock /tmp/.X11-unix/X$d
+    fi
     Xvfb :$d -screen 0 1280x960x24 -ac -nolisten tcp >/dev/null 2>&1 &
     XPID=$!
     sleep 2
