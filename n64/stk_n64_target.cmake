@@ -23,6 +23,12 @@ foreach(opt STK_N64_LOG_HEAP STK_N64_PROFILE)
     endif()
 endforeach()
 target_link_libraries(supertuxkart stk_n64_compat)
+if(NOT SERVER_ONLY)
+    # static library order: graphics_engine's occlusion culling uses Bullet,
+    # vorbis uses ogg (pkg-config's flags list vorbis last)
+    target_link_libraries(graphics_engine bulletcollision bulletmath)
+    target_link_libraries(supertuxkart ${N64_DEPS_PREFIX}/lib/libogg.a)
+endif()
 # The build is -Oz (code shares the 8 MB with everything else), but at -Oz
 # GCC calls even btVector3::operator+= out of line. Bullet and src/physics,
 # most of a race's CPU time, are compiled at STK_N64_PHYSICS_OPT instead.

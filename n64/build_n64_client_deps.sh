@@ -32,6 +32,10 @@ build() {
 }
 build libpng   -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF -DPNG_TOOLS=OFF \
                -DPNG_HARDWARE_OPTIMIZATIONS=OFF -DZLIB_ROOT="$PREFIX"
+# libpng names its static library liblibpng16_static.a for this target;
+# pkg-config users link -lpng16
+ln -sf liblibpng16_static.a "$PREFIX/lib/libpng16.a"
+ln -sf liblibpng16_static.a "$PREFIX/lib/libpng.a"
 # libjpeg-turbo always builds its command-line tools, which cannot link
 # without an OS: the library alone, installed by hand
 TARGET=jpeg-static build jpeg -DENABLE_SHARED=OFF -DENABLE_STATIC=ON \
@@ -51,3 +55,10 @@ build ogg      -DINSTALL_DOCS=OFF
 build vorbis
 build libsamplerate -DLIBSAMPLERATE_EXAMPLES=OFF
 echo "client libraries -> $PREFIX"
+# SDL2: headers only. STK, Irrlicht's SDL device and MojoAL are compiled
+# against the real SDL2 API; the functions they use are implemented on
+# libdragon in n64/compat (sdl_n64.c). SDL picks SDL_config_minimal.h for an
+# unknown platform.
+mkdir -p "$PREFIX/include/SDL2"
+cp "$SRC"/SDL2/include/*.h "$PREFIX/include/SDL2/"
+echo "SDL2 headers -> $PREFIX/include/SDL2"

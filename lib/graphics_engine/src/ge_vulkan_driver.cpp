@@ -1250,10 +1250,10 @@ found_mode:
     VkExtent2D min_extent = m_surface_capabilities.minImageExtent;
     VkExtent2D actual_extent =
     {
-        std::max(
-            std::min((unsigned)w, max_extent.width), min_extent.width),
-        std::max(
-            std::min((unsigned)h, max_extent.height), min_extent.height)
+        std::max<uint32_t>(
+            std::min<uint32_t>(w, max_extent.width), min_extent.width),
+        std::max<uint32_t>(
+            std::min<uint32_t>(h, max_extent.height), min_extent.height)
     };
 #if defined(__APPLE__)
     // MoltenVK stores the correctly rounded, high-dpi screen size in

@@ -1552,7 +1552,7 @@ void GEVulkanDrawCall::createVulkanData()
     push_constant.offset = 0;
     const VkPhysicalDeviceLimits& limit =
         vk->getPhysicalDeviceProperties().limits;
-    push_constant.size = std::min(limit.maxPushConstantsSize, 128u);
+    push_constant.size = std::min<uint32_t>(limit.maxPushConstantsSize, 128);
     push_constant.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
     pipeline_layout_info.pPushConstantRanges = &push_constant;
     pipeline_layout_info.pushConstantRangeCount = 1;

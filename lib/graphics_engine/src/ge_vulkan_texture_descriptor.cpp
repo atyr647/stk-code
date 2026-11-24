@@ -194,17 +194,11 @@ void GEVulkanTextureDescriptor::updateDescriptor()
 int GEVulkanTextureDescriptor::getTextureID(const irr::video::ITexture** list,
                                             const std::string& shader)
 {
-    TextureList key =
-    {{
-        m_white_image,
-        m_transparent_image,
-        m_transparent_image,
-        m_transparent_image,
-        m_transparent_image,
-        m_transparent_image,
-        m_transparent_image,
-        m_transparent_image
-    }};
+    // layer 0 white, the rest transparent, for any number of layers
+    // (_IRR_MATERIAL_MAX_TEXTURES_ can be configured down)
+    TextureList key;
+    key.fill(m_transparent_image);
+    key[0] = m_white_image;
     const auto& material = GEMaterialManager::getMaterial(shader);
     for (unsigned i = 0; i < m_max_layer; i++)
     {

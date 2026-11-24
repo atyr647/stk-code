@@ -30,6 +30,11 @@ add_library(stk_n64_compat STATIC
     ${LIBSTDCXX_THREAD_SOURCES})
 add_library(stk_n64_curl STATIC src/curl_stub.c)
 add_library(stk_n64_mbedcrypto STATIC src/mbedtls_stub.c)
+if(NOT SERVER_ONLY)
+    add_library(stk_n64_sdl STATIC src/sdl_n64.c)
+    target_include_directories(stk_n64_sdl PRIVATE ${N64_DEPS_PREFIX}/include/SDL2)
+    target_link_libraries(stk_n64_sdl stk_n64_compat)
+endif()
 
 option(STK_N64_CONSOLE "Show the log on an on-screen console. Costs 600 KB of heap (two 32-bit framebuffers); without it the log goes to the debug channel (ISViewer / USB) only" OFF)
 if(STK_N64_CONSOLE)

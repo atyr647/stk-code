@@ -530,7 +530,9 @@ void GamepadConfig::initSDLMapping()
     if (actions_map.find(SDL_CONTROLLER_BUTTON_LEFTSHOULDER) != actions_map.end() &&
         actions_map.find(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) != actions_map.end())
     {
-#ifdef __SWITCH__
+#if defined(__SWITCH__) || defined(N64)
+        // console layout: A accelerates, B brakes (see n64/compat/src/sdl_n64.c
+        // for how the N64 controller's buttons are named)
         setBindingFromTuple(PA_ACCEL, actions_map.at(SDL_CONTROLLER_BUTTON_A));
         setBindingFromTuple(PA_BRAKE, actions_map.at(SDL_CONTROLLER_BUTTON_B));
         setBindingFromTuple(PA_FIRE, actions_map.at(SDL_CONTROLLER_BUTTON_X));

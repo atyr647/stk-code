@@ -21,4 +21,16 @@ for f in adler32 compress crc32 deflate gzclose gzlib gzread gzwrite infback \
 done
 "$AR" rcs "$PREFIX/lib/libz.a" "$B"/*.o
 cp "$ZSRC/zlib.h" "$B/zconf.h" "$PREFIX/include/"
+# for pkg-config users (freetype2.pc and libpng.pc require zlib)
+mkdir -p "$PREFIX/lib/pkgconfig"
+cat > "$PREFIX/lib/pkgconfig/zlib.pc" <<PC
+prefix=$PREFIX
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+Name: zlib
+Description: zlib compression library
+Version: 1.3
+Libs: -L\${libdir} -lz
+Cflags: -I\${includedir}
+PC
 echo "zlib -> $PREFIX"

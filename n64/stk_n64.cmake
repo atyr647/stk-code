@@ -76,3 +76,25 @@ set(HAS_SOCKLEN_T 4 CACHE INTERNAL "provided by n64/compat")
 # "in libc" as far as CMake is concerned.
 set(CMAKE_HAVE_LIBC_PTHREAD 1 CACHE INTERNAL "threads via n64/compat")
 set(THREADS_PREFER_PTHREAD_FLAG OFF)
+
+# The client (graphics, GUI, sound): libraries from
+# n64/build_n64_client_deps.sh; SDL2 implemented on libdragon in n64/compat
+# (stk_n64_sdl: the window is the TV, OpenGL is libdragon's, the gamepads are
+# the controller ports, audio is libdragon's mixer); OpenAL is the bundled
+# MojoAL on top of it. The renderer is Irrlicht's fixed-function OpenGL
+# driver (STK's legacy renderer): libdragon's GL is OpenGL 1.x.
+if(NOT SERVER_ONLY)
+    find_package(PkgConfig REQUIRED)   # cmake/FindFreetype, FindOggVorbis
+    # pkg-config's link flags are bare -l names
+    link_directories(${N64_DEPS_PREFIX}/lib)
+    set(SDL2_LIBRARY stk_n64_sdl CACHE STRING "" FORCE)
+    set(SDL2_INCLUDEDIR ${N64_DEPS_PREFIX}/include/SDL2 CACHE PATH "" FORCE)
+    set(USE_MOJOAL ON CACHE BOOL "" FORCE)
+    set(NO_SHADERC ON CACHE BOOL "" FORCE)
+    set(USE_GLES2 OFF CACHE BOOL "" FORCE)
+    set(BUILD_RECORDER OFF CACHE BOOL "" FORCE)
+    set(PNG_LIBRARY ${N64_DEPS_PREFIX}/lib/liblibpng16_static.a CACHE FILEPATH "" FORCE)
+    set(PNG_PNG_INCLUDE_DIR ${N64_DEPS_PREFIX}/include CACHE PATH "" FORCE)
+    set(JPEG_LIBRARY ${N64_DEPS_PREFIX}/lib/libjpeg.a CACHE FILEPATH "" FORCE)
+    set(JPEG_INCLUDE_DIR ${N64_DEPS_PREFIX}/include CACHE PATH "" FORCE)
+endif()

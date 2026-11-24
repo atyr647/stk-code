@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <n64sys.h>      /* get_memory_size */
 #include <sys/stat.h>
 
 struct __stk_n64_dir {
@@ -169,4 +170,17 @@ char *realpath(const char *path, char *resolved)
     if (!resolved) return strdup(full);
     strcpy(resolved, full);
     return resolved;
+}
+
+/* sysconf: STK's hardware statistics ask for the memory size and the CPU
+ * count. newlib has no sysconf on bare metal. */
+long sysconf(int name)
+{
+    switch (name) {
+    case _SC_PAGESIZE:          return 4096;
+    case _SC_PHYS_PAGES:        return (long)(get_memory_size() / 4096);
+    case _SC_NPROCESSORS_CONF:
+    case _SC_NPROCESSORS_ONLN:  return 1;
+    default:                    errno = EINVAL; return -1;
+    }
 }

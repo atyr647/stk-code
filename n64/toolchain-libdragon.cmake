@@ -68,6 +68,11 @@ if(NOT N64_DEPS_PREFIX)
     endif()
 endif()
 set(CMAKE_FIND_ROOT_PATH ${N64_INST}/mips64-elf ${N64_DEPS_PREFIX})
+# pkg-config (STK's FindFreetype/FindOggVorbis use it): the prefix's .pc
+# files only, never the host's
+set(ENV{PKG_CONFIG_LIBDIR} "${N64_DEPS_PREFIX}/lib/pkgconfig:${N64_DEPS_PREFIX}/share/pkgconfig")
+set(ENV{PKG_CONFIG_PATH} "")
+set(ENV{PKG_CONFIG_SYSROOT_DIR} "")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)

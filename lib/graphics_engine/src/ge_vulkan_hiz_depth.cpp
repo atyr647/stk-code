@@ -353,8 +353,8 @@ void GEVulkanHiZDepth::generate(VkCommandBuffer cmd)
         // Calculate dispatch size based on current mip level dimensions
         const uint32_t width = m_hiz_depth->getSize().Width >> i;
         const uint32_t height = m_hiz_depth->getSize().Height >> i;
-        const uint32_t group_size_x = std::max(1u, (width + 15) / 16);
-        const uint32_t group_size_y = std::max(1u, (height + 15) / 16);
+        const uint32_t group_size_x = std::max<uint32_t>(1, (width + 15) / 16);
+        const uint32_t group_size_y = std::max<uint32_t>(1, (height + 15) / 16);
 
         vkCmdDispatch(cmd, group_size_x, group_size_y, 1);
 
