@@ -184,6 +184,14 @@ public:
 	virtual ~btExternalBvhNodes() {}
 	virtual void fetchNode(int nodeIndex, btQuantizedBvhNode& node) const = 0;
 	virtual void fetchLeaf(int triangleIndex, btQuantizedBvhNode& node) const = 0;
+	///The leaves of a whole bucket (count <= BUCKET_MAX) at once; sources
+	///that can keep decoded buckets around override this.
+	enum { BUCKET_MAX = 8 };
+	virtual void fetchBucket(int firstTriangle, int count, btQuantizedBvhNode* leaves) const
+	{
+		for (int i = 0; i < count; i++)
+			fetchLeaf(firstTriangle + i, leaves[i]);
+	}
 };
 #endif
 

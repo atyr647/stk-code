@@ -168,6 +168,39 @@ public:
         }
         readSlow(offset, dst, size);
     }
+    /** read() for a size known at compile time: the copy is inlined. */
+    template<unsigned N>
+    void readFixed(uint32_t offset, void *dst)
+    {
+        const uint32_t in_page = offset & (m_page_size - 1);
+        if (offset / m_page_size == m_last_page &&
+            in_page + N <= m_page_size)
+        {
+            m_hits++;
+            memcpy(dst, m_last_data + in_page, N);
+            return;
+        }
+        readSlow(offset, dst, N);
+    }
+    /** The bytes at offset as a pointer into the cache when they lie in
+     *  one page (valid until the next read), else copied to bounce. */
+    const uint8_t* peek(uint32_t offset, uint32_t size, uint8_t *bounce)
+    {
+        const uint32_t in_page = offset & (m_page_size - 1);
+        if (in_page + size > m_page_size)
+        {
+            readSlow(offset, bounce, size);
+            return bounce;
+        }
+        if (offset / m_page_size != m_last_page)
+        {
+            m_last_page = offset / m_page_size;
+            m_last_data = page(m_last_page);
+        }
+        else
+            m_hits++;
+        return m_last_data + in_page;
+    }
     uint32_t getFileSize() const { return m_file_size; }
     unsigned getHits() const { return m_hits; }
     unsigned getMisses() const { return m_misses; }
@@ -191,10 +224,20 @@ class CollisionFile : public btStridingMeshInterface,
         float m_vertices[9];
     };
     mutable Decoded       m_decoded[DECODED];
+    /** Recently expanded buckets (direct mapped): karts query the same
+     *  neighbourhood frame after frame, and expanding a bucket means
+     *  decoding and quantizing all its triangles. */
+    struct Bucket
+    {
+        int                m_first;
+        btQuantizedBvhNode m_leaves[btExternalBvhNodes::BUCKET_MAX];
+    };
+    mutable std::vector<Bucket> m_buckets;
+    mutable unsigned      m_bucket_hits, m_bucket_misses;
     btOptimizedBvh       *m_bvh;
     std::string           m_path;
 
-    CollisionFile() : m_bvh(NULL)
+    CollisionFile() : m_bucket_hits(0), m_bucket_misses(0), m_bvh(NULL)
     {
         for (unsigned i = 0; i < DECODED; i++)
             m_decoded[i].m_triangle = -1;
@@ -249,6 +292,10 @@ public:
     // btExternalBvhNodes
     virtual void fetchNode(int index, btQuantizedBvhNode &node) const;
     virtual void fetchLeaf(int triangle, btQuantizedBvhNode &node) const;
+    virtual void fetchBucket(int first, int count,
+                             btQuantizedBvhNode *leaves) const;
+    unsigned getBucketHits() const { return m_bucket_hits; }
+    unsigned getBucketMisses() const { return m_bucket_misses; }
     static const unsigned BUCKET = 8;
 
     // btStridingMeshInterface: triangles are only available one at a time

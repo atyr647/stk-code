@@ -153,6 +153,14 @@ CollisionFile* CollisionFile::open(const std::string &path,
         delete cf;
         return NULL;
     }
+    unsigned buckets = 256;
+    if (const char *b = getenv("STK_COLLISION_BUCKETS"))
+        buckets = atoi(b);
+    if (buckets & (buckets - 1))
+        buckets = 256;
+    Bucket empty;
+    empty.m_first = -1;
+    cf->m_buckets.assign(buckets, empty);
     cf->getBvh();
     return cf;
 }   // open
@@ -195,9 +203,10 @@ btOptimizedBvh* CollisionFile::getBvh()
 void CollisionFile::readRecord(unsigned triangle, uint32_t *vertices,
                                uint16_t *normals, unsigned *material) const
 {
-    uint8_t r[32];
+    uint8_t bounce[32];
     const unsigned size = m_header.m_record_size;
-    m_cache.read(m_header.m_off_records + triangle * size, r, size);
+    const uint8_t *r = m_cache.peek(m_header.m_off_records + triangle * size,
+                                    size, bounce);
     const unsigned vs = m_header.m_vertex_index_size;
     for (unsigned k = 0; k < 3; k++)
     {
@@ -227,8 +236,8 @@ void CollisionFile::readTriangle(unsigned triangle, btVector3 *p1,
         readRecord(triangle, v, n, &m);
         for (unsigned k = 0; k < 3; k++)
         {
-            m_cache.read(m_header.m_off_vertices + 12 * v[k],
-                         &d.m_vertices[3 * k], 12);
+            m_cache.readFixed<12>(m_header.m_off_vertices + 12 * v[k],
+                                  &d.m_vertices[3 * k]);
         }
         d.m_triangle = (int)triangle;
     }
@@ -246,7 +255,7 @@ void CollisionFile::readNormals(unsigned triangle, uint32_t *normals) const
     unsigned m;
     readRecord(triangle, v, n, &m);
     for (unsigned k = 0; k < 3; k++)
-        m_cache.read(m_header.m_off_normals + 4 * n[k], &normals[k], 4);
+        m_cache.readFixed<4>(m_header.m_off_normals + 4 * n[k], &normals[k]);
 }   // readNormals
 
 // ----------------------------------------------------------------------------
@@ -262,8 +271,8 @@ unsigned CollisionFile::readMaterial(unsigned triangle) const
 // ----------------------------------------------------------------------------
 void CollisionFile::fetchNode(int index, btQuantizedBvhNode &node) const
 {
-    m_cache.read(m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode),
-                 &node, sizeof(btQuantizedBvhNode));
+    m_cache.readFixed<sizeof(btQuantizedBvhNode)>(
+        m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode), &node);
 }   // fetchNode
 
 // ----------------------------------------------------------------------------
@@ -273,6 +282,32 @@ void CollisionFile::fetchLeaf(int triangle, btQuantizedBvhNode &node) const
     readTriangle(triangle, t, t + 1, t + 2);
     m_bvh->quantizeTriangleLeaf(t, triangle, node);
 }   // fetchLeaf
+
+// ----------------------------------------------------------------------------
+void CollisionFile::fetchBucket(int first, int count,
+                                btQuantizedBvhNode *leaves) const
+{
+    if (m_buckets.empty())
+    {
+        fetchLeaf(first, leaves[0]);
+        for (int i = 1; i < count; i++)
+            fetchLeaf(first + i, leaves[i]);
+        return;
+    }
+    // buckets start at most BUCKET_MAX triangles apart
+    Bucket &b = m_buckets[(unsigned(first) / 2) & (m_buckets.size() - 1)];
+    if (b.m_first != first)
+    {
+        m_bucket_misses++;
+        for (int i = 0; i < count; i++)
+            fetchLeaf(first + i, b.m_leaves[i]);
+        b.m_first = first;
+    }
+    else
+        m_bucket_hits++;
+    for (int i = 0; i < count; i++)
+        leaves[i] = b.m_leaves[i];
+}   // fetchBucket
 
 // ----------------------------------------------------------------------------
 bool CollisionFile::getTriangleVertices(int subpart, int triangle,

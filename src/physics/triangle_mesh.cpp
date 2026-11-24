@@ -198,6 +198,8 @@ TriangleMesh::~TriangleMesh()
                   c.getMisses(), 100.0 * c.getMisses() /
                   std::max(1u, c.getHits() + c.getMisses()),
                   double(c.getMisses()) * c.getPageSize() / 1048576.0);
+        Log::info("TriangleMesh", "Bucket cache: %u hits, %u misses.",
+                  m_rom->getBucketHits(), m_rom->getBucketMisses());
     }
     delete m_rom;
 #endif

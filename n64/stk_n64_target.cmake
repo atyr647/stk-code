@@ -21,6 +21,18 @@ if(STK_N64_LOG_HEAP)
         COMPILE_DEFINITIONS STK_N64_LOG_HEAP=1)
 endif()
 target_link_libraries(supertuxkart stk_n64_compat)
+# The build is -Oz (code shares the 8 MB with everything else), but at -Oz
+# GCC calls even btVector3::operator+= out of line. Physics is most of a
+# race's CPU time: Bullet and STK's physics code get -O2.
+option(STK_N64_FAST_PHYSICS "Compile Bullet and src/physics with -O2" ON)
+if(STK_N64_FAST_PHYSICS)
+    foreach(lib bulletmath bulletcollision bulletdynamics)
+        target_compile_options(${lib} PRIVATE -O2)
+    endforeach()
+    file(GLOB STK_N64_PHYSICS_SOURCES ${PROJECT_SOURCE_DIR}/src/physics/*.cpp)
+    set_property(SOURCE ${STK_N64_PHYSICS_SOURCES} APPEND PROPERTY
+        COMPILE_OPTIONS -O2)
+endif()
 target_link_options(supertuxkart PRIVATE
     "-Wl,-Map=${CMAKE_BINARY_DIR}/supertuxkart.map")
 target_link_options(supertuxkart PRIVATE "-Wl,--wrap=gettimeofday")

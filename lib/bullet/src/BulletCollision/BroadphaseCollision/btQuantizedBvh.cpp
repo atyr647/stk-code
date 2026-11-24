@@ -707,10 +707,12 @@ void	btQuantizedBvh::walkStacklessQuantizedTreeAgainstRay(btNodeOverlapCallback*
 				// each bucketed triangle gets the leaf test above
 				const int first = rootNode->getTriangleIndex();
 				const int count = rootNode->getPartId() + 1;
+				btQuantizedBvhNode leaves[btExternalBvhNodes::BUCKET_MAX];
+				btAssert(count <= btExternalBvhNodes::BUCKET_MAX);
+				m_externalNodes->fetchBucket(first, count, leaves);
 				for (int i = 0; i < count; i++)
 				{
-					btQuantizedBvhNode leaf;
-					m_externalNodes->fetchLeaf(first + i, leaf);
+					const btQuantizedBvhNode& leaf = leaves[i];
 					if (!testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,leaf.m_quantizedAabbMin,leaf.m_quantizedAabbMax))
 						continue;
 					btVector3 leafBounds[2];
@@ -796,10 +798,12 @@ void	btQuantizedBvh::walkStacklessQuantizedTree(btNodeOverlapCallback* nodeCallb
 			{
 				const int first = rootNode->getTriangleIndex();
 				const int count = rootNode->getPartId() + 1;
+				btQuantizedBvhNode leaves[btExternalBvhNodes::BUCKET_MAX];
+				btAssert(count <= btExternalBvhNodes::BUCKET_MAX);
+				m_externalNodes->fetchBucket(first, count, leaves);
 				for (int i = 0; i < count; i++)
 				{
-					btQuantizedBvhNode leaf;
-					m_externalNodes->fetchLeaf(first + i, leaf);
+					const btQuantizedBvhNode& leaf = leaves[i];
 					if (testQuantizedAabbAgainstQuantizedAabb(quantizedQueryAabbMin,quantizedQueryAabbMax,leaf.m_quantizedAabbMin,leaf.m_quantizedAabbMax))
 						nodeCallback->processNode(0, first + i);
 				}

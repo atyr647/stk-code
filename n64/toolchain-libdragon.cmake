@@ -36,7 +36,10 @@ string(APPEND N64_FLAGS " -falign-functions=32 -ffunction-sections -fdata-sectio
 # VR4300's missing NaN/denormal arithmetic is completed in software
 # (n64/compat/src/fpu_emu.c).
 string(APPEND N64_FLAGS " -fno-math-errno")
-string(APPEND N64_FLAGS " -DN64 -DLIBDRAGON_PREVIEW=2 -ftrivial-auto-var-init=pattern")
+# No -ftrivial-auto-var-init=pattern either (n64.mk's debugging aid): it
+# fills every local on every call, which costs real time in Bullet's vector
+# code, and for floats the pattern is a NaN.
+string(APPEND N64_FLAGS " -DN64 -DLIBDRAGON_PREVIEW=2")
 
 set(CMAKE_C_FLAGS_INIT   "${N64_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${N64_FLAGS}")
