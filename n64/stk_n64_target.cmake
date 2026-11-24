@@ -11,15 +11,17 @@ target_sources(supertuxkart PRIVATE ${STK_N64_DIR}/compat/src/n64_main.cpp
 # --wrap targets are invisible to LTO's symbol resolution: keep this file out
 set_source_files_properties(${STK_N64_DIR}/compat/src/n64_diag.cpp PROPERTIES
     COMPILE_OPTIONS "-fno-lto")
-foreach(opt STK_N64_SCREEN_LOG STK_N64_CONSOLE STK_N64_LOG_HEAP)
+foreach(opt STK_N64_SCREEN_LOG STK_N64_CONSOLE STK_N64_LOG_HEAP STK_N64_LOG_DMA STK_N64_PROFILE)
     if(${opt})
         target_compile_definitions(supertuxkart PRIVATE ${opt}=1)
     endif()
 endforeach()
-if(STK_N64_LOG_HEAP)
-    set_property(SOURCE ${PROJECT_SOURCE_DIR}/src/main_loop.cpp APPEND PROPERTY
-        COMPILE_DEFINITIONS STK_N64_LOG_HEAP=1)
-endif()
+foreach(opt STK_N64_LOG_HEAP STK_N64_PROFILE)
+    if(${opt})
+        set_property(SOURCE ${PROJECT_SOURCE_DIR}/src/main_loop.cpp APPEND
+            PROPERTY COMPILE_DEFINITIONS ${opt}=1)
+    endif()
+endforeach()
 target_link_libraries(supertuxkart stk_n64_compat)
 # The build is -Oz (code shares the 8 MB with everything else), but at -Oz
 # GCC calls even btVector3::operator+= out of line. Physics is most of a
@@ -37,6 +39,10 @@ target_link_options(supertuxkart PRIVATE
     "-Wl,-Map=${CMAKE_BINARY_DIR}/supertuxkart.map")
 target_link_options(supertuxkart PRIVATE "-Wl,--wrap=gettimeofday")
 target_link_options(supertuxkart PRIVATE "-Wl,--wrap=abort" "-Wl,--wrap=_exit")
+target_link_options(supertuxkart PRIVATE "-Wl,--wrap=stat")   # romfs_index.c
+if(STK_N64_LOG_DMA)
+    target_link_options(supertuxkart PRIVATE "-Wl,--wrap=dma_read")
+endif()
 # libdragon implements thread-local storage with an assembler macro that
 # rewrites `rdhwr` (not a VR4300 instruction) -- injected into every file by
 # -include ktls.h. With LTO the macro and the code using it must end up in the

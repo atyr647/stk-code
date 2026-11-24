@@ -16,6 +16,7 @@
 #include <libdragon.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <new>
 #include <backtrace.h>
@@ -131,3 +132,157 @@ extern "C" void stk_n64_note_thread(int stack_bytes)
            ++count, stack_bytes / 1024, hs.used / 1024);
     debug_backtrace();
 }
+
+#ifdef STK_N64_LOG_DMA
+// ----------------------------------------------------------------------------
+// ROM read profile (-DSTK_N64_LOG_DMA=ON): every PI DMA from the cartridge is
+// counted, timed and binned by 64 KB region of ROM; a summary goes to the log
+// every 10 s. ROM regions are matched to files with dfs_rom_addr.
+extern "C" void __real_dma_read(void *ram, pi_addr_t pi, unsigned long len);
+namespace
+{
+    struct DmaBin { uint32_t region, calls, bytes, ticks; };
+    DmaBin   g_bins[64];
+    uint32_t g_calls, g_bytes, g_ticks, g_last_report;
+}
+
+extern "C" __attribute__((used))
+void __wrap_dma_read(void *ram, pi_addr_t pi, unsigned long len)
+{
+    const uint32_t t0 = TICKS_READ();
+    __real_dma_read(ram, pi, len);
+    const uint32_t dt = TICKS_READ() - t0;
+    g_calls++; g_bytes += len; g_ticks += dt;
+    static uint32_t total;
+    if (++total % 4000 == 0)
+    {
+        debugf("[dma] read %lu bytes from %08lx, called from:\n",
+               (unsigned long)len, (unsigned long)pi);
+        debug_backtrace();
+    }
+    const uint32_t region = (uint32_t)pi >> 16;
+    for (unsigned i = 0; i < 64; i++)
+    {
+        DmaBin &b = g_bins[(region + i) & 63];
+        if (b.calls == 0 || b.region == region)
+        {
+            b.region = region; b.calls++; b.bytes += len; b.ticks += dt;
+            break;
+        }
+    }
+    if (t0 - g_last_report > TICKS_FROM_MS(10000))
+    {
+        g_last_report = t0;
+        debugf("[dma] %lu reads, %lu KB, %lu ms\n", (unsigned long)g_calls,
+               (unsigned long)g_bytes / 1024,
+               (unsigned long)TICKS_TO_MS(g_ticks));
+        for (unsigned k = 0; k < 4; k++)
+        {
+            DmaBin *top = NULL;
+            for (auto &b : g_bins)
+                if (b.calls && (!top || b.ticks > top->ticks)) top = &b;
+            if (!top) break;
+            debugf("[dma]   rom %08lx: %lu reads, %lu KB, %lu ms\n",
+                   (unsigned long)top->region << 16,
+                   (unsigned long)top->calls,
+                   (unsigned long)top->bytes / 1024,
+                   (unsigned long)TICKS_TO_MS(top->ticks));
+            top->calls = 0;           // report each region once
+        }
+        memset(g_bins, 0, sizeof(g_bins));
+        g_calls = g_bytes = g_ticks = 0;
+    }
+}
+
+extern "C" void stk_n64_log_rom_addr(const char *path)
+{
+    debugf("[dma] %s at rom %08lx\n", path, (unsigned long)dfs_rom_addr(path));
+}
+#endif
+
+#ifdef STK_N64_PROFILE
+// ----------------------------------------------------------------------------
+// Sampling profiler (-DSTK_N64_PROFILE=ON). A timer interrupt every 2 ms of
+// N64 time logs the interrupted PC, RA and the return addresses found on the
+// interrupted stack:   [prof] pc ra a1 a2 ...   (hex)
+// [prof] when the main thread was running, [othr] for any other thread
+// (idle included), then [wait]: where the main thread is parked.
+// n64/tools/n64_profile.py turns the log into flat and inclusive profiles.
+// Loading is skipped: sampling starts once MainLoop::renderGUI (loading
+// screens only, on a server build) has not been called for 3 s.
+extern "C" void *interrupt_exception_frame;
+extern "C" char __text_start[], __text_end[];
+// libdragon kernel internals (kernel_internal.h): a kthread_t starts with the
+// register block it was parked with
+// (unsized, so GCC does not assume it is in the small-data area)
+extern "C" void *th_cur;
+extern "C" char th_main[];
+namespace
+{
+    volatile uint32_t g_last_gui;
+    volatile bool     g_gui_seen;
+
+    bool is_return_address(uint32_t a)
+    {
+        if (a < (uint32_t)__text_start + 8 || a >= (uint32_t)__text_end ||
+            (a & 3))
+            return false;
+        const uint32_t call = *(const uint32_t*)(a - 8);
+        const uint32_t op = call >> 26;
+        return op == 3 || (op == 0 && (call & 63) == 9);     // jal, jalr
+    }
+
+    void log_sample(const char *tag, const reg_block_t *r, const uint32_t *sp)
+    {
+        char line[16 * 9 + 24];
+        int n = sprintf(line, "[%s] %08lx %08lx", tag, (unsigned long)r->epc,
+                        (unsigned long)(uint32_t)r->ra);
+        int found = 0;
+        if ((uint32_t)sp < 0x80000000u)
+            sp = (const uint32_t*)0x80800000u;      // no stack to scan
+        for (int i = 0; i < 96 && found < 14; i++)
+        {
+            if ((uint32_t)(sp + i) >= 0x80800000u)
+                break;
+            const uint32_t a = sp[i];
+            if (is_return_address(a))
+            {
+                n += sprintf(line + n, " %08lx", (unsigned long)a);
+                found++;
+            }
+        }
+        line[n++] = '\n';
+        line[n] = 0;
+        debugf("%s", line);
+    }
+
+    void profile_tick(int ovfl)
+    {
+        if (!g_gui_seen || TICKS_READ() - g_last_gui < TICKS_FROM_MS(3000))
+            return;
+        uint8_t *frame = (uint8_t*)interrupt_exception_frame;
+        if (!frame)
+            return;
+        // the interrupted thread; if it is not the main thread, also where
+        // the main thread is parked (what it waits for)
+        log_sample(th_cur == (void*)th_main ? "prof" : "othr",
+                   (const reg_block_t*)(frame + 32),
+                   (const uint32_t*)(frame + 576));
+        const reg_block_t *m = *(reg_block_t* const*)th_main;
+        if (th_cur != (void*)th_main && m)
+        {
+            log_sample("wait", m, (const uint32_t*)(uint32_t)m->sp);
+        }
+    }
+}
+
+extern "C" void stk_n64_profile_gui(void)
+{
+    g_last_gui = TICKS_READ();
+    if (!g_gui_seen)
+    {
+        g_gui_seen = true;
+        new_timer(TICKS_FROM_MS(2), TF_CONTINUOUS, profile_tick);
+    }
+}
+#endif

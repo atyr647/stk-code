@@ -26,6 +26,7 @@ add_library(stk_n64_compat STATIC
     src/net_stub.c
     src/ramfs.c
     src/posix_extra.c
+    src/romfs_index.c
     ${LIBSTDCXX_THREAD_SOURCES})
 add_library(stk_n64_curl STATIC src/curl_stub.c)
 add_library(stk_n64_mbedcrypto STATIC src/mbedtls_stub.c)
@@ -41,4 +42,11 @@ endif()
 option(STK_N64_SCREEN_LOG "Show the log on screen from static initialisation on" OFF)
 if(STK_N64_SCREEN_LOG)
     add_compile_definitions(STK_N64_SCREEN_LOG=1)
+endif()
+
+# --wrap=stat (romfs_index.c) is invisible to LTO's symbol resolution
+set_source_files_properties(src/romfs_index.c PROPERTIES COMPILE_OPTIONS "-fno-lto")
+if(STK_N64_VERIFY_ROMFS_INDEX)
+    set_property(SOURCE src/romfs_index.c APPEND PROPERTY
+        COMPILE_DEFINITIONS STK_N64_VERIFY_ROMFS_INDEX=1)
 endif()

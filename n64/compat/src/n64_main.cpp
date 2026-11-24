@@ -89,6 +89,10 @@ static int write_debug(char *data, unsigned int len)
 }
 #endif
 
+#ifdef STK_N64_LOG_DMA
+extern "C" void stk_n64_log_rom_addr(const char *path);   // n64_diag.cpp
+#endif
+extern "C" void stk_n64_romfs_index_init(void);   // romfs_index.c
 extern "C" void stk_n64_fpu_setup(void);
 extern "C" void stk_n64_fpu_emu_init(void);
 extern "C" uint32_t stk_n64_fpu_emulated(void);
@@ -107,6 +111,11 @@ int main()
     __stk_n64_threads_active = 1;
     dfs_init(DFS_DEFAULT_LOCATION);
     print_heap("after dfs_init");
+    stk_n64_romfs_index_init();
+    print_heap("after romfs index");
+#ifdef STK_N64_LOG_DMA
+    stk_n64_log_rom_addr("data/tracks/lighthouse/n64_collision.bin");
+#endif
     stk_n64_ramfs_init();
     print_heap("after ramfs init");
     for (const char *d : {"ram:/home", "ram:/home/.config", "ram:/home/.local",

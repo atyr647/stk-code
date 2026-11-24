@@ -83,6 +83,9 @@ extern "C" {
 }
 #endif
 
+#ifdef STK_N64_PROFILE
+extern "C" void stk_n64_profile_gui(void);
+#endif
 MainLoop* main_loop = 0;
 
 #ifdef WIN32
@@ -758,6 +761,9 @@ void MainLoop::run()
  */
 void MainLoop::renderGUI(int phase, int loop_index, int loop_size)
 {
+#ifdef STK_N64_PROFILE
+    stk_n64_profile_gui();   // n64/compat/src/n64_diag.cpp: sampling waits
+#endif                       // until loading is over
 #ifdef STK_N64_LOG_HEAP
     // The loading phases double as checkpoints of the N64 memory timeline
     // (each log line is prefixed with the heap in use, n64_main.cpp).
