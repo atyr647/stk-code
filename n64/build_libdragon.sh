@@ -13,6 +13,7 @@
 # own tools/build-toolchain.sh uses at this revision.
 set -euo pipefail
 N64_INST="${N64_INST:-/opt/pak-n64}"
+PATCHES="$(cd "$(dirname "$0")" && pwd)/patches"
 REV="${LIBDRAGON_REV:-39d0d6096130836a65710da6730290701d060272}"
 SRC="${LIBDRAGON_SRC:-${TMPDIR:-/tmp}/stk-libdragon}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 2)}"
@@ -25,7 +26,12 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 cd "$SRC"
 git fetch -q origin preview || true
-git checkout -q "$REV"
+git checkout -q -f "$REV"
+# Fixes this port needs that are not upstream yet
+for p in "$PATCHES"/libdragon-*.patch; do
+    [ -e "$p" ] || continue
+    git apply "$p" || { echo "libdragon: $p does not apply"; exit 1; }
+done
 
 export N64_INST PATH="$N64_INST/bin:$PATH"
 make -j"$JOBS" libdragon
