@@ -222,7 +222,11 @@ report by [tools/n64_profile.py](tools/n64_profile.py); exact self time):
 | Kart vehicle physics (btKart) | 4% |
 
 The ray walk over the track's collision tree is 26% on its own: four wheel
-rays per kart per physics step, plus the AI's terrain rays.
+rays per kart per physics step, plus the AI's terrain rays. Its samples
+cluster at the first instructions of code blocks, the signature of
+instruction-cache misses. FPU traps are not a cost: in a whole race the
+VR4300 trapped on one operation (NaN/denormal operand, completed in
+software by `fpu_emu.c`); loading accounts for the other 1,372.
 
 **What got it from 11 to 19 frames/s, and startup from 140 s to 22 s:**
 
@@ -323,20 +327,21 @@ STK source changes, all inert on PC unless a low-memory flag is set
 
 1. Speed, 3x to go for the headless race:
    - the collision ray walk (26%) and the rest of the collision path;
-   - FPU operations the VR4300 traps on (completed in software): count
-     them per race and remove the sources;
    - per-frame allocations (InterpolationArray copies in the kart and AI
      code) and `dynamic_cast`;
    - if that is not enough, a decision on fidelity: physics at 60 Hz
      instead of 120 Hz would halve the physics cost but changes how karts
      handle.
-2. Memory headroom (~230 KB at the loading peak), needed for the renderer:
+2. After the race, STK's shutdown stalls after its last "Destroyed
+   singleton" and `stk_main` never returns (harmless for a game that is
+   switched off, but it hides the end-of-run report).
+3. Memory headroom (~230 KB at the loading peak), needed for the renderer:
    - trim libstdc++'s locale;
    - avoid holding the whole main track mesh while it is converted.
-3. Renderer: an N64 back-end for Irrlicht's scene, using libdragon GL or
+4. Renderer: an N64 back-end for Irrlicht's scene, using libdragon GL or
    Tiny3D, with render geometry streamed from ROM like collision. Then input
    and audio back-ends, and the client (non-server) build.
-4. Karts that stall above the triangle budget: a no-pruning fallback, or
+5. Karts that stall above the triangle budget: a no-pruning fallback, or
    joint culling.
-5. Cartridge budget: collision (28 MB) plus meshes, audio and textures must
+6. Cartridge budget: collision (28 MB) plus meshes, audio and textures must
    fit in 64 MB.
