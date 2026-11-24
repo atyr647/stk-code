@@ -230,7 +230,8 @@ bool TriangleMesh::useCollisionFile(const std::string &path)
 }   // useCollisionFile
 
 // -----------------------------------------------------------------------------
-bool TriangleMesh::exportCollisionFile(const std::string &path) const
+bool TriangleMesh::exportCollisionFile(const std::string &path,
+                                       unsigned world_objects) const
 {
     const btBvhTriangleMeshShape *shape =
         dynamic_cast<const btBvhTriangleMeshShape*>(m_collision_shape);
@@ -262,7 +263,8 @@ bool TriangleMesh::exportCollisionFile(const std::string &path) const
     std::vector<uint32_t> file_order;
     if (!CollisionFile::write(path, m_hash.get(), *shape,
                               (unsigned)m_triangleIndex2Material.size(),
-                              (unsigned)order.size(), record, &file_order))
+                              (unsigned)order.size(), world_objects,
+                              record, &file_order))
         return false;
     return verifyCollisionFile(path, file_order);
 }   // exportCollisionFile

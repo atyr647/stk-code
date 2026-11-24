@@ -27,7 +27,7 @@
 #include <cstddef>
 #include <cstdlib>
 
-const char *CollisionFile::MAGIC = "STKCOL\0\3";
+const char *CollisionFile::MAGIC = "STKCOL\0\4";
 static const uint32_t BYTE_ORDER_MARK = 0x01020304;
 
 // ============================================================================
@@ -156,6 +156,18 @@ CollisionFile* CollisionFile::open(const std::string &path,
     cf->getBvh();
     return cf;
 }   // open
+
+// ----------------------------------------------------------------------------
+bool CollisionFile::setWorldObjects(const std::string &path, uint32_t n)
+{
+    FILE *f = fopen(path.c_str(), "r+b");
+    if (!f)
+        return false;
+    const bool ok =
+        fseek(f, offsetof(CollisionFileHeader, m_world_objects),
+              SEEK_SET) == 0 && fwrite(&n, sizeof(n), 1, f) == 1;
+    return fclose(f) == 0 && ok;
+}   // setWorldObjects
 
 // ----------------------------------------------------------------------------
 CollisionFile::~CollisionFile()

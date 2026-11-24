@@ -38,7 +38,32 @@ public:
                                              constraintSolver,
                                              collisionConfiguration)
     {
+#ifdef STK_LOW_MEMORY
+        m_peak_objects = 0;
+#endif
     }
+
+#ifdef STK_LOW_MEMORY
+private:
+    int m_peak_objects;
+public:
+    /** The most collision objects the world has held at once. Loading a
+     *  track adds many bodies that are merged or removed again before the
+     *  race, so this is much more than the number at race start; it is
+     *  what a fixed-capacity broadphase must be sized for. */
+    int getPeakNumCollisionObjects() const { return m_peak_objects; }
+    // ------------------------------------------------------------------------
+    virtual void addCollisionObject(btCollisionObject* collisionObject,
+        short int collisionFilterGroup = btBroadphaseProxy::StaticFilter,
+        short int collisionFilterMask = btBroadphaseProxy::AllFilter ^
+                                        btBroadphaseProxy::StaticFilter)
+    {
+        btDiscreteDynamicsWorld::addCollisionObject(collisionObject,
+            collisionFilterGroup, collisionFilterMask);
+        if (getNumCollisionObjects() > m_peak_objects)
+            m_peak_objects = getNumCollisionObjects();
+    }
+#endif
 
     /** Resets m_localTime to 0. This allows more precise replay of
      *  physics, which is important for replaying histories. */

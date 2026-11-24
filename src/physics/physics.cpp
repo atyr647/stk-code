@@ -18,6 +18,10 @@
 
 #include "physics/physics.hpp"
 
+#include "physics/collision_file.hpp"
+#include <cstdlib>
+#include <cstring>
+
 #include "animations/three_d_animation.hpp"
 #include "config/player_manager.hpp"
 #include "config/player_profile.hpp"
@@ -86,9 +90,18 @@ Physics::Physics() : btSequentialImpulseConstraintSolver()
  *  model is loaded. This allows the physics to use the actual track dimension
  *  for the axis sweep.
  */
-void Physics::init(const Vec3 &world_min, const Vec3 &world_max)
+void Physics::init(const Vec3 &world_min, const Vec3 &world_max,
+                   unsigned int max_objects)
 {
     m_physics_loop_active = false;
+    // The sweep's capacity is fixed at creation and costs memory per slot;
+    // its behaviour does not depend on it. A caller that knows how many
+    // objects the world will hold can size it (the default is for the
+    // largest stock track).
+    if (max_objects > 0 && max_objects < 16384)
+        m_axis_sweep      = new btAxisSweep3(world_min, world_max,
+                                             (unsigned short)max_objects);
+    else
     m_axis_sweep          = new btAxisSweep3(world_min, world_max);
     m_dynamics_world      = new STKDynamicsWorld(m_dispatcher,
                                                  m_axis_sweep,
@@ -178,6 +191,29 @@ void Physics::removeKart(const AbstractKart *kart)
  */
 void Physics::update()
 {
+#ifdef STK_ROM_COLLISION
+    // Host builds exporting collision files (see Track::createPhysicsModel):
+    // record the most objects the world held while the track was set up,
+    // which sizes the broadphase when the file is used.
+    static bool export_done = false;
+    const char *export_mode = getenv("STK_COLLISION_EXPORT");
+    if (export_mode && !export_done)
+    {
+        export_done = true;
+        const std::string path =
+            Track::getCurrentTrack()->getTrackFile("n64_collision.bin");
+        const unsigned n = m_dynamics_world->getPeakNumCollisionObjects();
+        if (!CollisionFile::setWorldObjects(path, n))
+            Log::fatal("Physics", "Could not update '%s'.", path.c_str());
+        Log::info("Physics", "'%s': %u world objects.", path.c_str(), n);
+        if (strcmp(export_mode, "exit") == 0)
+        {
+            // mid-step: leave without tearing the game down
+            fflush(NULL);
+            _Exit(0);
+        }
+    }
+#endif
     PROFILER_PUSH_CPU_MARKER("-- Physics - step simulation", 0, 0, 0);
 
     m_physics_loop_active = true;

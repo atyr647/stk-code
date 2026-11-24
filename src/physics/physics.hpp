@@ -158,7 +158,8 @@ public:
     // ----------------------------------------------------------------------------------------
     static void destroy();
     // ----------------------------------------------------------------------------------------
-    void  init             (const Vec3 &min_world, const Vec3 &max_world);
+    void  init             (const Vec3 &min_world, const Vec3 &max_world,
+                            unsigned int max_objects = 0);
     void  addKart          (const AbstractKart *k);
     void  addBody          (btRigidBody* b) {m_dynamics_world->addRigidBody(b);}
     void  removeKart       (const AbstractKart *k);

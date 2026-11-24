@@ -941,12 +941,15 @@ void Track::createPhysicsModel(unsigned int main_track_count,
     if (export_mode && !for_height_map)
     {
         const std::string path = m_root + "n64_collision.bin";
-        if (!m_track_mesh->exportCollisionFile(path))
+        if (!m_track_mesh->exportCollisionFile(path,
+                Physics::get()->getPhysicsWorld()->getNumCollisionObjects()))
             Log::fatal("Track", "Could not write '%s'.", path.c_str());
-        Log::info("Track", "Wrote '%s' (%d triangles).", path.c_str(),
-                  m_track_mesh->getNumTriangles());
-        if (strcmp(export_mode, "exit") == 0)
-            exit(0);
+        Log::info("Track", "Wrote '%s' (%d triangles, %d world objects).",
+                  path.c_str(), m_track_mesh->getNumTriangles(),
+                  Physics::get()->getPhysicsWorld()->getNumCollisionObjects());
+        // The export is completed (and "exit" honoured) at the first
+        // physics step, see Physics::update: only then does the world hold
+        // all of the track's objects, whose number the file records.
     }
 #endif
     main_loop->renderGUI(5585);
@@ -1395,7 +1398,21 @@ bool Track::loadMainTrack(const XMLNode &root)
     // could be relaxed to fix this, it is not certain how the physics
     // will handle items that are out of the AABB
     m_aabb_max.setY(m_aabb_max.getY()+30.0f);
+#ifdef STK_ROM_COLLISION
+    // The collision file records the most objects the world held while
+    // this track was set up; projectiles and the like come on top.
+    unsigned int world_objects = 0;
+    if (m_track_mesh->isFromCollisionFile())
+    {
+        world_objects = m_track_mesh->getCollisionFile()->getHeader()
+                                                        .m_world_objects;
+        if (world_objects > 0)
+            world_objects += 256;
+    }
+    Physics::get()->init(m_aabb_min, m_aabb_max, world_objects);
+#else
     Physics::get()->init(m_aabb_min, m_aabb_max);
+#endif
 
     ModelDefinitionLoader lodLoader(this);
 

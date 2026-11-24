@@ -87,6 +87,8 @@ struct CollisionFileHeader
     uint32_t m_num_normals;
     uint32_t m_vertex_index_size;   // 2 or 4
     uint32_t m_record_size;
+    uint32_t m_world_objects;       // most collision objects the physics
+                                    // world held while the track loaded
     float    m_aabb_min[3], m_aabb_max[3];   // btTriangleMeshShape local AABB
     float    m_bvh_min[3], m_bvh_max[3], m_bvh_quantization[3];
     uint32_t m_off_nodes;       // m_num_nodes x btQuantizedBvhNode
@@ -192,7 +194,10 @@ public:
     static bool write(const std::string &path, uint64_t hash,
                       const btBvhTriangleMeshShape &shape,
                       unsigned num_triangles, unsigned num_materials,
+                      unsigned world_objects,
                       F get_triangle, std::vector<uint32_t> *order);
+    /** Sets m_world_objects in an existing file (host builds). */
+    static bool setWorldObjects(const std::string &path, uint32_t n);
     virtual ~CollisionFile();
 
     const CollisionFileHeader& getHeader() const { return m_header; }
@@ -250,6 +255,7 @@ template<typename F>
 bool CollisionFile::write(const std::string &path, uint64_t hash,
                           const btBvhTriangleMeshShape &shape,
                           unsigned num_triangles, unsigned num_materials,
+                          unsigned world_objects,
                           F get_triangle, std::vector<uint32_t> *order)
 {
     btBvhTriangleMeshShape &s = const_cast<btBvhTriangleMeshShape&>(shape);
@@ -286,6 +292,7 @@ bool CollisionFile::write(const std::string &path, uint64_t hash,
     h.m_hash_hi       = (uint32_t)(hash >> 32);
     h.m_num_triangles = num_triangles;
     h.m_num_materials = num_materials;
+    h.m_world_objects = world_objects;
     for (int i = 0; i < 3; i++)
     {
         h.m_aabb_min[i]         = shape.getLocalAabbMin()[i];

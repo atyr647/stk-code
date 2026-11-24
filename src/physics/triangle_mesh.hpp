@@ -284,7 +284,8 @@ public:
      *  triangles added afterwards are only hashed and must reproduce it. */
     bool useCollisionFile(const std::string &path);
     /** Write the collision built in RAM to a file (host builds). */
-    bool exportCollisionFile(const std::string &path) const;
+    bool exportCollisionFile(const std::string &path,
+                             unsigned world_objects = 0) const;
     bool verifyCollisionFile(const std::string &path,
                              const std::vector<uint32_t> &order) const;
     bool isFromCollisionFile() const { return m_rom != NULL; }
