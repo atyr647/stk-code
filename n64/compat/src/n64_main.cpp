@@ -16,6 +16,7 @@
 // survive that.
 #undef NDEBUG
 #include <libdragon.h>
+#include <chrono>
 #include <system.h>     // hook_stdio_calls
 #include <sys/stat.h>
 #include <cstdio>
@@ -70,7 +71,11 @@ static int write_debug(char *data, unsigned int len)
         {
             heap_stats_t hs;
             sys_get_heap_stats(&hs);
-            const unsigned long ds = TICKS_TO_MS(get_ticks()) / 100;
+            // the clock STK times itself with (clock_libdragon.cpp)
+            const unsigned long ds = (unsigned long)
+                (std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now().time_since_epoch())
+                     .count() / 100);
             debugf("[%4d K %4lu.%lu s] ", hs.used / 1024, ds / 10, ds % 10);
             line_start = false;
         }

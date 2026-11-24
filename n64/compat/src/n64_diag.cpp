@@ -28,8 +28,14 @@ extern "C" void __real__exit(int);
 
 static volatile bool console_up = false;
 
+extern "C" uint32_t stk_n64_fpu_emulated(void);   // fpu_emu.c
+
 static void halt(const char *why, int code)
 {
+    // FPU operations the VR4300 trapped on (NaN/denormal operands) and
+    // fpu_emu.c completed in software: each costs an exception
+    debugf("[n64] FPU operations completed in software: %lu\n",
+           (unsigned long)stk_n64_fpu_emulated());
     fprintf(stdout, "\n[n64] %s (%d) -- halted\n", why, code);
     if (console_up) console_render();
     debugf("[n64] %s (%d) -- halted\n", why, code);
@@ -318,6 +324,15 @@ namespace
             *p++ = '\n';
             isv_write(line, (unsigned)(p - line));
             g_skip_report = 0;
+        }
+        // every 10 s: FPU operations completed in software so far
+        static uint32_t ticks;
+        if (++ticks % 5000 == 0)
+        {
+            char line[40] __attribute__((aligned(4))) = "[fpu]";
+            char *p = put_hex(line + 5, stk_n64_fpu_emulated());
+            *p++ = '\n';
+            isv_write(line, (unsigned)(p - line));
         }
         // the interrupted thread; if it is not the main thread, also where
         // the main thread is parked (what it waits for)

@@ -9,9 +9,9 @@ switchable back on; tested in ares using the build scripts from
 | Area | State |
 |---|---|
 | Toolchain, ares | Built with Pak's `tools/build_n64_toolchain.sh` and `tools/build_ares.sh` (GCC 16.2.0, ares with the N64 core) |
-| libdragon | `preview` branch, pinned ([build_libdragon.sh](build_libdragon.sh)). Pak pins `trunk`, which has no kernel threads or OpenGL. One patch ([patches/](patches/)): a thread start-up race that could hang the ROM in an endless exception loop. |
-| STK on libdragon | Headless `SERVER_ONLY` build. **In ares, a complete 4-kart Lighthouse race runs to the finish** (STK's real `main()`, 3 AI karts plus the profiling kart, every lap) and shuts down cleanly. Peak heap 2,591 KB of 2,886 KB. |
-| Blocker | **CPU speed.** The race logic alone runs about 12x slower than real time (see [Performance](#performance)). |
+| libdragon | `preview` branch, pinned ([build_libdragon.sh](build_libdragon.sh)). Pak pins `trunk`, which has no kernel threads or OpenGL. Two patches ([patches/](patches/)): a thread start-up race that could hang the ROM in an endless exception loop, and file sizes in directory walks. |
+| STK on libdragon | Headless `SERVER_ONLY` build. **In ares, a complete 4-kart Lighthouse race runs to the finish** (STK's real `main()`, 3 AI karts plus the profiling kart, every lap) and shuts down cleanly. 22 s from boot to the race; peak heap 2,661 KB of 2,895 KB. |
+| Blocker | **CPU speed.** The race logic alone runs at 19 frames/s, about 3x slower than real time (see [Performance](#performance)). |
 | Assets | Every stock track, kart, texture and sound is converted ([tools/stk_n64_assets.py](tools/stk_n64_assets.py)). **All 21 race tracks validated as faithful.** |
 | Collision | Served from cartridge ROM through a 128 KB cache, bit-for-bit what STK would build in RAM ([details](#track-collision-from-rom)). |
 
@@ -181,23 +181,77 @@ What the 3.0 MB peak holds:
 Those were the QEMU measurements. On the N64 itself, with the track's
 broadphase sized to its object count (recorded in the collision file), item
 models kept without vertex data, and bytecode-only AngelScript, the race now
-peaks at **2,591 KB of 2,886 KB** (while the main track mesh is converted)
-and holds about 1.9 MB while racing.
+peaks at **2,661 KB of 2,895 KB** (while the main track mesh is converted;
+the romfs index adds 38 KB) and holds about 2.0 MB while racing.
+
+The margin is thin and fragmentation matters more than the total: with
+117 KB more code (an experiment with `-O2` on STK's per-frame code), track
+objects failed to load with `std::bad_alloc` although 492 KB were free in
+total. Every test run is checked for `bad_alloc` as well as for speed.
 
 ## Performance
 
-First full race in ares (headless, no rendering or audio): 7,917 frames in
-718 s of N64 time, 11 frames/s, for a race of 58 s of game time. Race
-times match the desktop build to within a few seconds (58.0 s average vs
-56.9 s); karts take slightly different lines because the N64's math
-library rounds differently, which also makes the track's collision
-positions differ in the last bits from the exported file. The N64 build
-uses the file's (`STK_COLLISION_FILE_AUTHORITATIVE`); triangle count and
-materials must still match exactly.
+Measured in ares on a seeded 4-kart Lighthouse race (`n64/runs/`), headless
+(no rendering, sound or input):
 
-The collision cache served 28.4 million triangle reads with 3,580 misses
-(0.01%, 0.4 MB read from ROM), so ROM collision is not the cost. Profiling
-where the CPU time goes is the next step.
+| | |
+|---|---|
+| Boot to race start | **22 s** (was 140 s) |
+| Race | **19.4 frames/s**, 51 ms per frame (was 11) |
+| Needed for real time | 60 frames/s: a frame is 1/60 s of game time, 2 physics steps at 120 Hz |
+
+So the race logic alone still runs about **3x slower than real time**.
+
+Race times match the desktop build to within a few seconds; karts take
+slightly different lines because the N64's math library rounds differently,
+which also makes the track's collision positions differ in the last bits
+from the exported file. The N64 build uses the file's
+(`STK_COLLISION_FILE_AUTHORITATIVE`); triangle count and materials must
+still match exactly.
+
+**Where the time goes** (on-device sampling profiler, `STK_N64_PROFILE`,
+report by [tools/n64_profile.py](tools/n64_profile.py); exact self time):
+
+| | Share |
+|---|---|
+| Track collision: tree walks, ROM cache, triangle tests | 45% |
+| Rest of Bullet: broadphase, contacts, solver, vector math | 21% |
+| C/C++ runtime: malloc, memcpy, dynamic_cast | 11% |
+| STK kart and item logic | 6% |
+| AI and drive graph | 5% |
+| Kart vehicle physics (btKart) | 4% |
+
+The ray walk over the track's collision tree is 26% on its own: four wheel
+rays per kart per physics step, plus the AI's terrain rays.
+
+**What got it from 11 to 19 frames/s, and startup from 140 s to 22 s:**
+
+- *Collision buckets kept decoded* (256 buckets, 33 KB, 98% hits): every
+  bucket a query touched was being decoded and quantized again.
+- *Tree nodes read in place* from the page cache, a page of nodes at a time
+  (`btExternalBvhNodes::nodeSpan`), with a cursor per read stream; no
+  library `memcpy` per 16-byte node.
+- *Compiler levels*, each measured on the same seeded race: Bullet and
+  `src/physics` at `-O2` (29% faster than `-Oz`). Higher is worse here: STK's
+  own per-frame code at `-Os` made the race 8% slower than `-Oz` (the
+  VR4300's instruction cache is 16 KB), and `-O3` adds 92 KB of code, after
+  which track loading runs out of memory. libdragon's
+  `-ftrivial-auto-var-init=pattern` is off for STK (it filled every local
+  on every call).
+- *Startup*: `stat()` on `rom:/` answered from an in-RAM index of the
+  cartridge filesystem (see the platform layer); DragonFS read directory
+  entries from ROM one 256-byte DMA at a time, 90% of startup.
+
+**Testing notes.** STK seeds its random numbers with `time(0)`, the seconds
+since boot here, so the test race passes `--seed=1`. Even so, a race only
+repeats exactly while the sequence of heap allocations does: STK orders
+some things by address (the desktop build differs run to run under ASLR).
+Changes to code that allocates are compared in milliseconds per frame.
+
+The profiler's own pitfalls, now handled: sampling through ares's GDB
+server is not proportional to N64 time; and the sampler must not use
+stdio or `io_write()` from its interrupt (both wait on kernel objects,
+which corrupted the scheduler and hung the race in a DMA wait).
 
 ## Platform layer (`n64/compat`)
 
@@ -227,8 +281,20 @@ STK's code is used as is. What the N64 lacks is provided underneath it.
   - `rom:/` (DragonFS) holds the data, read-only;
   - `ram:/` (`ramfs.c`) is writable and holds config, profiles and the log;
   - `dirent`, `realpath`, `access`, `fcntl` and `uname` are filled in.
+- **ROM file lookups** ([romfs_index.c](compat/src/romfs_index.c)):
+  DragonFS finds a path by reading its directory entries from ROM one at
+  a time, a DMA each. A table of 64-bit path hashes built at boot (2.7 s,
+  38 KB for 3,090 entries) answers `stat()` for `rom:/` instead, replaying
+  DragonFS's own path walk line for line, quirks included.
+  `STK_N64_VERIFY_ROMFS_INDEX` checks every answer against the real
+  `stat()`: 0 mismatches over a whole race.
 - **Log:** stdout (STK's log) goes to the debug channel (ISViewer/USB), or
-  to the on-screen console in `STK_N64_CONSOLE` builds.
+  to the on-screen console in `STK_N64_CONSOLE` builds. With
+  `STK_N64_LOG_HEAP` each line starts with the heap in use and the time
+  since boot.
+- **Profiling:** `STK_N64_PROFILE` (timer-driven sampler, report by
+  [tools/n64_profile.py](tools/n64_profile.py)) and `STK_N64_LOG_DMA` (ROM
+  reads counted and timed by region); both off by default.
 - **C++ exceptions with LTO:** libgcc hands landing pads a zero-extended
   exception pointer. On o64, with libdragon's 64-bit addressing, that is an
   invalid address. Four runtime entry points are wrapped to sign-extend it.
@@ -255,9 +321,16 @@ STK source changes, all inert on PC unless a low-memory flag is set
 
 ## Next steps
 
-1. Speed: profile the headless race on the N64 (physics, AI, scripting,
-   FPU traps completed in software) and bring it to real time.
-2. Memory headroom (295 KB spare at peak today), needed for the renderer:
+1. Speed, 3x to go for the headless race:
+   - the collision ray walk (26%) and the rest of the collision path;
+   - FPU operations the VR4300 traps on (completed in software): count
+     them per race and remove the sources;
+   - per-frame allocations (InterpolationArray copies in the kart and AI
+     code) and `dynamic_cast`;
+   - if that is not enough, a decision on fidelity: physics at 60 Hz
+     instead of 120 Hz would halve the physics cost but changes how karts
+     handle.
+2. Memory headroom (~230 KB at the loading peak), needed for the renderer:
    - trim libstdc++'s locale;
    - avoid holding the whole main track mesh while it is converted.
 3. Renderer: an N64 back-end for Irrlicht's scene, using libdragon GL or
