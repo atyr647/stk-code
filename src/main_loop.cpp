@@ -758,6 +758,16 @@ void MainLoop::run()
  */
 void MainLoop::renderGUI(int phase, int loop_index, int loop_size)
 {
+#ifdef STK_N64_LOG_HEAP
+    // The loading phases double as checkpoints of the N64 memory timeline
+    // (each log line is prefixed with the heap in use, n64_main.cpp).
+    static int last_phase = -1;
+    if (phase != last_phase)
+    {
+        last_phase = phase;
+        Log::info("MainLoop", "loading phase %d", phase);
+    }
+#endif
 #ifdef SERVER_ONLY
     return;
 #else

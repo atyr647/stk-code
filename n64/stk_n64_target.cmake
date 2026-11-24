@@ -16,6 +16,10 @@ foreach(opt STK_N64_SCREEN_LOG STK_N64_CONSOLE STK_N64_LOG_HEAP)
         target_compile_definitions(supertuxkart PRIVATE ${opt}=1)
     endif()
 endforeach()
+if(STK_N64_LOG_HEAP)
+    set_property(SOURCE ${PROJECT_SOURCE_DIR}/src/main_loop.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS STK_N64_LOG_HEAP=1)
+endif()
 target_link_libraries(supertuxkart stk_n64_compat)
 target_link_options(supertuxkart PRIVATE
     "-Wl,-Map=${CMAKE_BINARY_DIR}/supertuxkart.map")
