@@ -183,6 +183,14 @@ class btExternalBvhNodes
 public:
 	virtual ~btExternalBvhNodes() {}
 	virtual void fetchNode(int nodeIndex, btQuantizedBvhNode& node) const = 0;
+	///The node, in place where possible. The pointer is only valid until the
+	///next call on this source: the walks read what they need from a node
+	///before calling anything else.
+	virtual const btQuantizedBvhNode* nodeAt(int nodeIndex) const
+	{
+		fetchNode(nodeIndex, m_scratch);
+		return &m_scratch;
+	}
 	virtual void fetchLeaf(int triangleIndex, btQuantizedBvhNode& node) const = 0;
 	///The leaves of a whole bucket (count <= BUCKET_MAX) at once; sources
 	///that can keep decoded buckets around override this.
@@ -192,6 +200,8 @@ public:
 		for (int i = 0; i < count; i++)
 			fetchLeaf(firstTriangle + i, leaves[i]);
 	}
+private:
+	mutable btQuantizedBvhNode m_scratch;
 };
 #endif
 

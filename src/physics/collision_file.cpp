@@ -41,6 +41,10 @@ FilePageCache::~FilePageCache()
 bool FilePageCache::open(const std::string &path, unsigned cache_bytes,
                          unsigned page_size)
 {
+    // a power of two of at least 32 bytes: 16-byte aligned records (tree
+    // nodes) never cross a page
+    if (page_size < 32 || (page_size & (page_size - 1)) != 0)
+        page_size = 128;
     m_page_size = page_size;
     m_file = fopen(path.c_str(), "rb");
     if (!m_file)
@@ -137,6 +141,7 @@ CollisionFile* CollisionFile::open(const std::string &path,
               h.m_record_size <= 32 &&
               h.m_off_nodes + uint64_t(h.m_num_nodes) *
                               sizeof(btQuantizedBvhNode) <= h.m_file_size &&
+              h.m_off_nodes % sizeof(btQuantizedBvhNode) == 0 &&
               h.m_off_records + tris * h.m_record_size <= h.m_file_size &&
               h.m_off_vertices + uint64_t(h.m_num_vertices) * 12
                                                         <= h.m_file_size &&
@@ -274,6 +279,15 @@ void CollisionFile::fetchNode(int index, btQuantizedBvhNode &node) const
     m_cache.readFixed<sizeof(btQuantizedBvhNode)>(
         m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode), &node);
 }   // fetchNode
+
+// ----------------------------------------------------------------------------
+const btQuantizedBvhNode* CollisionFile::nodeAt(int index) const
+{
+    // Nodes start 16-byte aligned and pages are a multiple of 16 bytes
+    // (checked in open): a node never crosses a page.
+    return (const btQuantizedBvhNode*)m_cache.at(
+        m_header.m_off_nodes + index * sizeof(btQuantizedBvhNode));
+}   // nodeAt
 
 // ----------------------------------------------------------------------------
 void CollisionFile::fetchLeaf(int triangle, btQuantizedBvhNode &node) const

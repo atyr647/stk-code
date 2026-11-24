@@ -22,12 +22,14 @@ subject to the following restrictions:
 #define RAYAABB2
 
 #ifdef BULLET_SMALL_MEMORY
-// Stackless walks over an external node source: the node is fetched into a
-// local copy each step and only the index advances.
+// Stackless walks over an external node source: each step asks the source
+// for the node (nodeAt: in place where possible, valid until the source is
+// next used) and only the index advances. A node's fields are all read
+// before the walk calls back into anything: the escape index only in the
+// branch where no callback ran.
 #define BT_WALK_ROOT(startIndex) \
-	btQuantizedBvhNode externalNode; \
-	const btQuantizedBvhNode* rootNode = m_externalNodes ? &externalNode : &m_quantizedContiguousNodes[startIndex];
-#define BT_WALK_FETCH() if (m_externalNodes) m_externalNodes->fetchNode(curIndex, externalNode)
+	const btQuantizedBvhNode* rootNode = m_externalNodes ? 0 : &m_quantizedContiguousNodes[startIndex];
+#define BT_WALK_FETCH() if (m_externalNodes) rootNode = m_externalNodes->nodeAt(curIndex)
 #define BT_WALK_ADVANCE(n) if (!m_externalNodes) rootNode += (n)
 #else
 #define BT_WALK_ROOT(startIndex) \

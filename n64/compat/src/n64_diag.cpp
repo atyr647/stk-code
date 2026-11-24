@@ -220,6 +220,7 @@ extern "C" char th_main[];
 namespace
 {
     volatile uint32_t g_last_gui;
+    uint32_t          g_skip_report;
     volatile bool     g_gui_seen;
 
     bool is_return_address(uint32_t a)
@@ -232,11 +233,48 @@ namespace
         return op == 3 || (op == 0 && (call & 63) == 9);     // jal, jalr
     }
 
+    // Interrupt context: no stdio (debugf takes newlib's stream lock, a
+    // kernel mutex) and no io_write() either (it waits for libdragon's DMA
+    // queue on a kernel condition variable). Either one, from an interrupt,
+    // corrupts the scheduler: the main thread waiting for a DMA was never
+    // woken again. Lines are formatted by hand and written to the ISViewer
+    // registers directly, only while the PI is idle, and the write is let
+    // finish before returning, so a DMA started next finds the bus free.
+    // A main-thread log line being written at that moment can come out
+    // garbled; nothing can hang.
+    void isv_write(const char *data, unsigned len)
+    {
+        volatile uint32_t *const buffer = (volatile uint32_t*)0xB3FF0020;
+        volatile uint32_t *const write_pointer = (volatile uint32_t*)0xB3FF0014;
+        for (unsigned i = 0; i < len; i += 4)
+        {
+            const uint8_t *d = (const uint8_t*)data + i;
+            buffer[i / 4] = ((uint32_t)d[0] << 24) | ((uint32_t)d[1] << 16) |
+                            ((uint32_t)d[2] << 8) | d[3];
+            while (*PI_STATUS & PI_STATUS_IO_BUSY) {}
+        }
+        *write_pointer = len;
+        while (*PI_STATUS & PI_STATUS_IO_BUSY) {}
+    }
+
+    char *put_hex(char *p, uint32_t v)
+    {
+        *p++ = ' ';
+        for (int shift = 28; shift >= 0; shift -= 4)
+            *p++ = "0123456789abcdef"[(v >> shift) & 15];
+        return p;
+    }
+
     void log_sample(const char *tag, const reg_block_t *r, const uint32_t *sp)
     {
-        char line[16 * 9 + 24];
-        int n = sprintf(line, "[%s] %08lx %08lx", tag, (unsigned long)r->epc,
-                        (unsigned long)(uint32_t)r->ra);
+        char line[8 + 16 * 9 + 8] __attribute__((aligned(4)));
+        char *p = line;
+        *p++ = '[';
+        while (*tag)
+            *p++ = *tag++;
+        *p++ = ']';
+        p = put_hex(p, r->epc);
+        p = put_hex(p, (uint32_t)r->ra);
         int found = 0;
         if ((uint32_t)sp < 0x80000000u)
             sp = (const uint32_t*)0x80800000u;      // no stack to scan
@@ -247,13 +285,12 @@ namespace
             const uint32_t a = sp[i];
             if (is_return_address(a))
             {
-                n += sprintf(line + n, " %08lx", (unsigned long)a);
+                p = put_hex(p, a);
                 found++;
             }
         }
-        line[n++] = '\n';
-        line[n] = 0;
-        debugf("%s", line);
+        *p++ = '\n';
+        isv_write(line, (unsigned)(p - line));
     }
 
     void profile_tick(int ovfl)
@@ -263,6 +300,25 @@ namespace
         uint8_t *frame = (uint8_t*)interrupt_exception_frame;
         if (!frame)
             return;
+        // The log goes out through ISViewer, on the cartridge bus. Writing
+        // to it while a PI DMA is in flight loses the DMA's completion
+        // interrupt and hangs whoever waits for it: skip those samples
+        // (ROM reads are rare in a race; the count is logged).
+        static uint32_t skipped;
+        if (*PI_STATUS & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY))
+        {
+            if (++skipped % 500 == 0)
+                g_skip_report = skipped;
+            return;
+        }
+        if (g_skip_report)
+        {
+            char line[40] __attribute__((aligned(4))) = "[skip]";
+            char *p = put_hex(line + 6, g_skip_report);
+            *p++ = '\n';
+            isv_write(line, (unsigned)(p - line));
+            g_skip_report = 0;
+        }
         // the interrupted thread; if it is not the main thread, also where
         // the main thread is parked (what it waits for)
         log_sample(th_cur == (void*)th_main ? "prof" : "othr",

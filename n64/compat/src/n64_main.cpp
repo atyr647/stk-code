@@ -60,8 +60,8 @@ static void print_heap(const char *when)
 static int write_debug(char *data, unsigned int len)
 {
 #ifdef STK_N64_LOG_HEAP
-    // Each log line starts with the heap in use: STK's log becomes a
-    // memory timeline.
+    // Each log line starts with the heap in use and the time since boot:
+    // STK's log becomes a memory and time line.
     static bool line_start = true;
     unsigned int from = 0;
     for (unsigned int i = 0; i < len; i++)
@@ -70,7 +70,8 @@ static int write_debug(char *data, unsigned int len)
         {
             heap_stats_t hs;
             sys_get_heap_stats(&hs);
-            debugf("[%4d K] ", hs.used / 1024);
+            const unsigned long ds = TICKS_TO_MS(get_ticks()) / 100;
+            debugf("[%4d K %4lu.%lu s] ", hs.used / 1024, ds / 10, ds % 10);
             line_start = false;
         }
         if (data[i] == '\n')

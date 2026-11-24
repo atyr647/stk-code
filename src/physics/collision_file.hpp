@@ -168,19 +168,28 @@ public:
         }
         readSlow(offset, dst, size);
     }
+    /** The bytes at offset, in place: valid until the next read. The caller
+     *  guarantees they do not cross a page. */
+    const uint8_t* at(uint32_t offset)
+    {
+        const uint32_t page_number = offset / m_page_size;
+        if (page_number == m_last_page)
+            m_hits++;
+        else
+        {
+            m_last_page = page_number;
+            m_last_data = page(page_number);
+        }
+        return m_last_data + (offset & (m_page_size - 1));
+    }
     /** read() for a size known at compile time: the copy is inlined. */
     template<unsigned N>
     void readFixed(uint32_t offset, void *dst)
     {
-        const uint32_t in_page = offset & (m_page_size - 1);
-        if (offset / m_page_size == m_last_page &&
-            in_page + N <= m_page_size)
-        {
-            m_hits++;
-            memcpy(dst, m_last_data + in_page, N);
-            return;
-        }
-        readSlow(offset, dst, N);
+        if ((offset & (m_page_size - 1)) + N <= m_page_size)
+            memcpy(dst, at(offset), N);
+        else
+            readSlow(offset, dst, N);
     }
     /** The bytes at offset as a pointer into the cache when they lie in
      *  one page (valid until the next read), else copied to bounce. */
@@ -291,6 +300,7 @@ public:
 
     // btExternalBvhNodes
     virtual void fetchNode(int index, btQuantizedBvhNode &node) const;
+    virtual const btQuantizedBvhNode* nodeAt(int index) const;
     virtual void fetchLeaf(int triangle, btQuantizedBvhNode &node) const;
     virtual void fetchBucket(int first, int count,
                              btQuantizedBvhNode *leaves) const;
