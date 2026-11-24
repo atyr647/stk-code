@@ -261,7 +261,7 @@ bool TriangleMesh::exportCollisionFile(const std::string &path,
         t->m_material = materials[i];
     };
     std::vector<uint32_t> file_order;
-    if (!CollisionFile::write(path, m_hash.get(), *shape,
+    if (!CollisionFile::write(path, m_hash, *shape,
                               (unsigned)m_triangleIndex2Material.size(),
                               (unsigned)order.size(), world_objects,
                               record, &file_order))
@@ -437,13 +437,13 @@ void TriangleMesh::addTriangle(const btVector3 &t1, const btVector3 &t2,
     const btVector3 *t[3] = { &t1, &t2, &t3 };
     for (int k = 0; k < 3; k++)
     {
-        m_hash.add((float)t[k]->getX());
-        m_hash.add((float)t[k]->getY());
-        m_hash.add((float)t[k]->getZ());
+        m_hash.m_positions.add((float)t[k]->getX());
+        m_hash.m_positions.add((float)t[k]->getY());
+        m_hash.m_positions.add((float)t[k]->getZ());
     }
     for (int k = 0; k < 3; k++)
-        m_hash.add(packed[k]);
-    m_hash.add((uint32_t)hashMaterial(m));
+        m_hash.m_normals.add(packed[k]);
+    m_hash.m_materials.add((uint32_t)hashMaterial(m));
     if (m_rom)
     {
         // Served from the collision file: only check it is the same mesh
@@ -486,14 +486,44 @@ void TriangleMesh::createCollisionShape(bool create_collision_object, const char
 #ifdef STK_ROM_COLLISION
     if (m_rom)
     {
-        if (m_rom_triangles != m_rom->getHeader().m_num_triangles ||
-            m_hash.get() != m_rom->getHash() ||
-            m_hash_materials.size() != m_rom->getHeader().m_num_materials)
+        // The triangle count and the material sequence are exact and must
+        // match. Positions and normals must match too, unless the file is
+        // declared authoritative (STK_COLLISION_FILE_AUTHORITATIVE, the N64
+        // build): the host that wrote it and the target differ in their
+        // math libraries' last bits, and the file -- checked bit for bit
+        // against the collision built on the host -- is then what is used.
+        const bool same_structure =
+            m_rom_triangles == m_rom->getHeader().m_num_triangles &&
+            m_hash_materials.size() == m_rom->getHeader().m_num_materials &&
+            m_rom->sameMaterials(m_hash);
+        const bool same_positions = m_rom->samePositions(m_hash);
+        const bool same_normals = m_rom->sameNormals(m_hash);
+#ifdef STK_COLLISION_FILE_AUTHORITATIVE
+        const bool ok = same_structure;
+        if (ok && !(same_positions && same_normals))
+        {
+            Log::info("TriangleMesh", "'%s': %s differ in rounding from "
+                      "this build's; using the file's.",
+                      m_rom->getPath().c_str(),
+                      !same_positions && !same_normals ? "positions and "
+                      "normals" : !same_positions ? "positions" : "normals");
+        }
+#else
+        const bool ok = same_structure && same_positions && same_normals;
+#endif
+        if (!ok)
         {
             Log::fatal("TriangleMesh", "'%s' does not match this track "
-                       "(%u triangles, file has %u): regenerate the data.",
+                       "(%u triangles and %u materials, file has %u and %u; "
+                       "materials %s, positions %s, normals %s): "
+                       "regenerate the data.",
                        m_rom->getPath().c_str(), m_rom_triangles,
-                       m_rom->getHeader().m_num_triangles);
+                       (unsigned)m_hash_materials.size(),
+                       m_rom->getHeader().m_num_triangles,
+                       m_rom->getHeader().m_num_materials,
+                       m_rom->sameMaterials(m_hash) ? "match" : "differ",
+                       same_positions ? "match" : "differ",
+                       same_normals ? "match" : "differ");
         }
         btBvhTriangleMeshShape *shape =
             new btBvhTriangleMeshShape(m_rom, /*quantized*/true,

@@ -31,6 +31,11 @@ add_definitions(-D_IRR_MATERIAL_MAX_TEXTURES_=2)
 # (n64/tools/export_collision.sh writes tracks/*/n64_script.asb): no script
 # compiler (AS_NO_COMPILER halves AngelScript) and no preprocessor (mcpp).
 add_definitions(-DSTK_SCRIPT_BYTECODE_ONLY -DAS_NO_COMPILER)
+# Collision files are written by a host build with another math library
+# (glibc; newlib here): transforms can differ in a last bit. The file,
+# verified bit for bit on the host, is what the N64 uses; its triangle
+# count and material sequence must still match what this build converts.
+add_definitions(-DSTK_COLLISION_FILE_AUTHORITATIVE)
 # lib/irrlicht: switch off loaders/writers nothing on the N64 uses
 # (IrrCompileConfig.h's own NO_* switches). ZIP stays: addons install from it.
 add_definitions(-DNO_IRR_COMPILE_WITH_BMP_LOADER_ -DNO_IRR_COMPILE_WITH_BMP_WRITER_

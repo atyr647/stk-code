@@ -203,7 +203,7 @@ private:
 #ifdef STK_ROM_COLLISION
     /** Hash of the triangle stream (see collision_file.hpp), and the
      *  materials in the order they first appear in it. */
-    CollisionHash                 m_hash;
+    CollisionHashes               m_hash;
     std::vector<const Material*>  m_hash_materials;
     /** If set, all collision data is read from this file and addTriangle
      *  only hashes. */

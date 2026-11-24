@@ -65,6 +65,22 @@ public:
     uint64_t get() const { return m_hash; }
 };   // CollisionHash
 
+/** The triangle stream hashed three ways, so that a mismatch says what
+ *  differs. Positions and normals go through floating point (transforms,
+ *  i.e. sin/cos from the platform's math library, and normalisation), and
+ *  can differ in a last bit between the build that wrote a file and the
+ *  one reading it; the material sequence is integer-exact. */
+struct CollisionHashes
+{
+    CollisionHash m_positions, m_normals, m_materials;
+    void reset()
+    {
+        m_positions.reset();
+        m_normals.reset();
+        m_materials.reset();
+    }
+};   // CollisionHashes
+
 // ----------------------------------------------------------------------------
 /** On-disk layout, native byte order (files are written by a host build of
  *  the same byte order as the target).
@@ -79,7 +95,9 @@ struct CollisionFileHeader
 {
     char     m_magic[8];
     uint32_t m_byte_order;      // 0x01020304 as written
-    uint32_t m_hash_lo, m_hash_hi;
+    uint32_t m_hash_positions[2];   // low, high word
+    uint32_t m_hash_normals[2];
+    uint32_t m_hash_materials[2];
     uint32_t m_num_triangles;
     uint32_t m_num_nodes;
     uint32_t m_num_materials;
@@ -191,7 +209,7 @@ public:
      *  fills the record of the mesh's triangle i. On return order[k] is the
      *  mesh triangle stored as triangle k. */
     template<typename F>
-    static bool write(const std::string &path, uint64_t hash,
+    static bool write(const std::string &path, const CollisionHashes &hash,
                       const btBvhTriangleMeshShape &shape,
                       unsigned num_triangles, unsigned num_materials,
                       unsigned world_objects,
@@ -202,9 +220,21 @@ public:
 
     const CollisionFileHeader& getHeader() const { return m_header; }
     const std::string& getPath() const { return m_path; }
-    uint64_t getHash() const
+    static uint64_t join(const uint32_t *w)
     {
-        return (uint64_t(m_header.m_hash_hi) << 32) | m_header.m_hash_lo;
+        return (uint64_t(w[1]) << 32) | w[0];
+    }
+    bool samePositions(const CollisionHashes &h) const
+    {
+        return join(m_header.m_hash_positions) == h.m_positions.get();
+    }
+    bool sameNormals(const CollisionHashes &h) const
+    {
+        return join(m_header.m_hash_normals) == h.m_normals.get();
+    }
+    bool sameMaterials(const CollisionHashes &h) const
+    {
+        return join(m_header.m_hash_materials) == h.m_materials.get();
     }
     /** The BVH, its nodes read on demand. Owned by this object. */
     btOptimizedBvh* getBvh();
@@ -252,7 +282,8 @@ bool writeCollisionFileData(const std::string &path, CollisionFileHeader h,
                             const std::vector<CollisionTriangle> &triangles);
 
 template<typename F>
-bool CollisionFile::write(const std::string &path, uint64_t hash,
+bool CollisionFile::write(const std::string &path,
+                          const CollisionHashes &hash,
                           const btBvhTriangleMeshShape &shape,
                           unsigned num_triangles, unsigned num_materials,
                           unsigned world_objects,
@@ -288,8 +319,14 @@ bool CollisionFile::write(const std::string &path, uint64_t hash,
     memset(&h, 0, sizeof(h));
     memcpy(h.m_magic, MAGIC, 8);
     h.m_byte_order    = 0x01020304;
-    h.m_hash_lo       = (uint32_t)hash;
-    h.m_hash_hi       = (uint32_t)(hash >> 32);
+    const uint64_t hp = hash.m_positions.get(), hn = hash.m_normals.get(),
+                   hm = hash.m_materials.get();
+    h.m_hash_positions[0] = (uint32_t)hp;
+    h.m_hash_positions[1] = (uint32_t)(hp >> 32);
+    h.m_hash_normals[0]   = (uint32_t)hn;
+    h.m_hash_normals[1]   = (uint32_t)(hn >> 32);
+    h.m_hash_materials[0] = (uint32_t)hm;
+    h.m_hash_materials[1] = (uint32_t)(hm >> 32);
     h.m_num_triangles = num_triangles;
     h.m_num_materials = num_materials;
     h.m_world_objects = world_objects;

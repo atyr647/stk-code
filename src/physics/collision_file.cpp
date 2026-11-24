@@ -27,7 +27,7 @@
 #include <cstddef>
 #include <cstdlib>
 
-const char *CollisionFile::MAGIC = "STKCOL\0\4";
+const char *CollisionFile::MAGIC = "STKCOL\0\5";
 static const uint32_t BYTE_ORDER_MARK = 0x01020304;
 
 // ============================================================================
