@@ -9,9 +9,9 @@ switchable back on; tested in ares using the build scripts from
 | Area | State |
 |---|---|
 | Toolchain, ares | Built with Pak's `tools/build_n64_toolchain.sh` and `tools/build_ares.sh` (GCC 16.2.0, ares with the N64 core) |
-| libdragon | `preview` branch, pinned ([build_libdragon.sh](build_libdragon.sh)). Pak pins `trunk`, which has no kernel threads or OpenGL. |
-| STK on libdragon | Compiles and links (headless `SERVER_ONLY` build). In ares it runs STK's real `main()` into race loading: config, offline networking, Irrlicht, karts, the track's scene and its collision, served from ROM. |
-| Blocker | **RAM.** The headless race still runs out of heap while setting up physics (see [Memory](#memory)). |
+| libdragon | `preview` branch, pinned ([build_libdragon.sh](build_libdragon.sh)). Pak pins `trunk`, which has no kernel threads or OpenGL. One patch ([patches/](patches/)): a thread start-up race that could hang the ROM in an endless exception loop. |
+| STK on libdragon | Headless `SERVER_ONLY` build. **In ares, a complete 4-kart Lighthouse race runs to the finish** (STK's real `main()`, 3 AI karts plus the profiling kart, every lap) and shuts down cleanly. Peak heap 2,591 KB of 2,886 KB. |
+| Blocker | **CPU speed.** The race logic alone runs about 12x slower than real time (see [Performance](#performance)). |
 | Assets | Every stock track, kart, texture and sound is converted ([tools/stk_n64_assets.py](tools/stk_n64_assets.py)). **All 21 race tracks validated as faithful.** |
 | Collision | Served from cartridge ROM through a 128 KB cache, bit-for-bit what STK would build in RAM ([details](#track-collision-from-rom)). |
 
@@ -178,17 +178,26 @@ What the 3.0 MB peak holds:
 | Scripting | 140 KB | |
 | Scene nodes | 135 KB | |
 
-So the headless race needs about 0.7 MB more than the N64 has. In ares the
-ROM gets through loading the track and opening its collision, then runs out
-in `Physics::init`. The next savings in hand:
+Those were the QEMU measurements. On the N64 itself, with the track's
+broadphase sized to its object count (recorded in the collision file), item
+models kept without vertex data, and bytecode-only AngelScript, the race now
+peaks at **2,591 KB of 2,886 KB** (while the main track mesh is converted)
+and holds about 1.9 MB while racing.
 
-- AngelScript without its compiler (done in this tree, not yet measured on
-  the N64): about 300 KB of code;
-- libstdc++'s locale facets (`time_get`, `money_get`, ... for both `char`
-  and `wchar_t`, in both ABIs), which STK never uses: about 250 KB of code;
-- not keeping the whole main track mesh while it is converted, which the
-  ROM collision makes possible (the client renderer needs the same:
-  streaming render geometry from ROM).
+## Performance
+
+First full race in ares (headless, no rendering or audio): 7,917 frames in
+718 s of N64 time, 11 frames/s, for a race of 58 s of game time. Race
+times match the desktop build to within a few seconds (58.0 s average vs
+56.9 s); karts take slightly different lines because the N64's math
+library rounds differently, which also makes the track's collision
+positions differ in the last bits from the exported file. The N64 build
+uses the file's (`STK_COLLISION_FILE_AUTHORITATIVE`); triangle count and
+materials must still match exactly.
+
+The collision cache served 28.4 million triangle reads with 3,580 misses
+(0.01%, 0.4 MB read from ROM), so ROM collision is not the cost. Profiling
+where the CPU time goes is the next step.
 
 ## Platform layer (`n64/compat`)
 
@@ -246,14 +255,15 @@ STK source changes, all inert on PC unless a low-memory flag is set
 
 ## Next steps
 
-1. Memory, to finish a headless race in ares:
-   - measure the bytecode-only AngelScript build on the N64;
+1. Speed: profile the headless race on the N64 (physics, AI, scripting,
+   FPU traps completed in software) and bring it to real time.
+2. Memory headroom (295 KB spare at peak today), needed for the renderer:
    - trim libstdc++'s locale;
    - avoid holding the whole main track mesh while it is converted.
-2. Renderer: an N64 back-end for Irrlicht's scene, using libdragon GL or
+3. Renderer: an N64 back-end for Irrlicht's scene, using libdragon GL or
    Tiny3D, with render geometry streamed from ROM like collision. Then input
    and audio back-ends, and the client (non-server) build.
-3. Karts that stall above the triangle budget: a no-pruning fallback, or
+4. Karts that stall above the triangle budget: a no-pruning fallback, or
    joint culling.
-4. Cartridge budget: collision (28 MB) plus meshes, audio and textures must
+5. Cartridge budget: collision (28 MB) plus meshes, audio and textures must
    fit in 64 MB.
