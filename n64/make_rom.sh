@@ -95,12 +95,16 @@ if [ "${STK_N64_SERVER:-0}" != 1 ]; then
     rm -rf "$WORK/fs/data/replay"; mkdir -p "$WORK/fs/data/replay"
     : > "$WORK/fs/data/replay/n64_keep.txt"
     # STK reads a font file whole into RAM: the emoji (10 MB) and CJK
-    # (4.6 MB) fonts cannot be loaded on the N64 at all. Empty stand-ins
-    # satisfy the skin's existence checks; Chinese/Japanese/emoji text is
-    # not displayable.
-    for f in NotoColorEmoji.ttf wqy-microhei.ttf; do
-        [ -f "$WORK/fs/data/ttf/$f" ] && : > "$WORK/fs/data/ttf/$f"
-    done
+    # (4.6 MB) fonts cannot be loaded on the N64 at all. The emoji font gets
+    # an empty stand-in (for the skin's existence checks); the CJK font is
+    # cut down to the symbols STK's own text needs (keyboard keys, stars,
+    # ticks: n64_font_subset.py, needs Python's fontTools). Chinese,
+    # Japanese and emoji text is not displayable.
+    [ -f "$WORK/fs/data/ttf/NotoColorEmoji.ttf" ] && : > "$WORK/fs/data/ttf/NotoColorEmoji.ttf"
+    if [ -s "$WORK/fs/data/ttf/wqy-microhei.ttf" ]; then
+        python3 "$STK/n64/tools/n64_font_subset.py" "$STK/data/ttf/wqy-microhei.ttf" \
+            "$WORK/fs/data/ttf/wqy-microhei.ttf"
+    fi
     # Without translations (STK_N64_PO, above) all text is in Latin script:
     # the fallback fonts for other scripts (870 KB, also read whole) would
     # only take RAM. Cantarell (text) and SigmarOne (digits) stay.

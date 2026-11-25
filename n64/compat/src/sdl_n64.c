@@ -20,6 +20,7 @@
 /* debugf() is compiled out under NDEBUG; this file's messages are wanted */
 #undef NDEBUG
 #include <libdragon.h>
+#include <kirq.h>
 #include <GL/gl.h>
 #include <GL/gl_integration.h>
 #include <math.h>
@@ -54,6 +55,8 @@ int SDL_InitSubSystem(Uint32 flags)
     {
         joypad_init();
         g_joypad_up = 1;
+        void pad_install(void);
+        pad_install();
     }
     return 0;
 }
@@ -417,6 +420,7 @@ typedef struct
     uint16_t  src_w, src_h;       /* the image as the program sees it */
     uint8_t   used;
     uint8_t   mask;               /* single-channel: IA8 */
+    uint16_t  wrap_s, wrap_t;     /* GL wrap modes; 0 = GL_REPEAT */
 } n64_tex_t;
 
 static n64_tex_t *g_tex;
@@ -755,6 +759,32 @@ static surface_t halve(const surface_t *img)
     return out;
 }
 
+#ifndef GL_MIRRORED_REPEAT
+#define GL_MIRRORED_REPEAT 0x8370
+#endif
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
+
+/* GL's wrap modes as libdragon's texture parameters: libdragon takes them
+ * with the image only (glTexParameter on a texture that has one is an
+ * error), so the texture is given again when they change */
+static void tex_upload(n64_tex_t *t)
+{
+    rdpq_texparms_t parms;
+    memset(&parms, 0, sizeof(parms));
+    const uint16_t w[2] = { t->wrap_s, t->wrap_t };
+    for (int i = 0; i < 2; i++)
+    {
+        const int clamp = w[i] == GL_CLAMP || w[i] == GL_CLAMP_TO_EDGE;
+        const float repeats = clamp ? 1.0f : REPEAT_INFINITE;
+        const bool mirror = w[i] == GL_MIRRORED_REPEAT;
+        if (i == 0) { parms.s.repeats = repeats; parms.s.mirror = mirror; }
+        else        { parms.t.repeats = repeats; parms.t.mirror = mirror; }
+    }
+    glSpriteTextureN64(GL_TEXTURE_2D, t->spr, &parms);
+}
+
 static void tex_give(n64_tex_t *t, sprite_t *spr, uint32_t bytes)
 {
     tex_release(t);
@@ -762,7 +792,7 @@ static void tex_give(n64_tex_t *t, sprite_t *spr, uint32_t bytes)
     t->spr_bytes = bytes;
     stk_n64_tex_bytes += bytes;
     stk_n64_tex_count++;
-    glSpriteTextureN64(GL_TEXTURE_2D, spr, NULL);
+    tex_upload(t);
 }
 
 /* make img (RGBA16, at most 4096 texels) the texture's image, in the
@@ -940,7 +970,7 @@ static void n64_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
         /* font pages: changed in place, given again to be re-uploaded */
         surface_t px = sprite_get_pixels(t->spr);
         tex_store(&px, t->src_w, t->src_h, x, y, w, h, format, type, data);
-        glSpriteTextureN64(GL_TEXTURE_2D, t->spr, NULL);
+        tex_upload(t);
         return;
     }
     surface_t img = tex_unpack(t);
@@ -990,6 +1020,39 @@ static void n64_glCopyTexSubImage2D(GLenum target, GLint level, GLint xoff,
     free(rgba);
 }
 
+static void tex_wrap(GLenum target, GLenum pname, GLint value)
+{
+    n64_tex_t *t = tex_find(g_bound_2d, 1);
+    if (!t)
+        return;
+    uint16_t *w = pname == GL_TEXTURE_WRAP_S ? &t->wrap_s : &t->wrap_t;
+    const uint16_t v = value == GL_REPEAT ? 0 : (uint16_t)value;
+    if (*w == v)
+        return;                     /* Irrlicht sets them at every draw */
+    *w = v;
+    if (t->spr)
+        tex_upload(t);
+    (void)target;
+}
+
+static void n64_glTexParameteri(GLenum target, GLenum pname, GLint param)
+{
+    if (target == GL_TEXTURE_2D &&
+        (pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T))
+        tex_wrap(target, pname, param);
+    else
+        glTexParameteri(target, pname, param);
+}
+
+static void n64_glTexParameterf(GLenum target, GLenum pname, GLfloat param)
+{
+    if (target == GL_TEXTURE_2D &&
+        (pname == GL_TEXTURE_WRAP_S || pname == GL_TEXTURE_WRAP_T))
+        tex_wrap(target, pname, (GLint)param);
+    else
+        glTexParameterf(target, pname, param);
+}
+
 static void n64_glBindTexture(GLenum target, GLuint name)
 {
     if (target == GL_TEXTURE_2D)
@@ -1020,6 +1083,8 @@ static const struct { const char *name; void *fn; } g_gl_wrapped[] =
     { "glTexImage2D", (void*)n64_glTexImage2D },
     { "glTexSubImage2D", (void*)n64_glTexSubImage2D },
     { "glCopyTexSubImage2D", (void*)n64_glCopyTexSubImage2D },
+    { "glTexParameteri", (void*)n64_glTexParameteri },
+    { "glTexParameterf", (void*)n64_glTexParameterf },
     { "glBindTexture", (void*)n64_glBindTexture },
     { "glDeleteTextures", (void*)n64_glDeleteTextures },
     { "glGenerateMipmap", (void*)n64_glGenerateMipmap },
@@ -1201,7 +1266,7 @@ int SDL_HapticRumblePlay(SDL_Haptic *h, float s, Uint32 l) { (void)h; (void)s; (
 int SDL_HapticSetAutocenter(SDL_Haptic *h, int a) { (void)h; (void)a; return -1; }
 
 /* ---------------------------------------------------------------- events -- */
-#define QUEUE 64
+#define QUEUE 256
 static SDL_Event g_queue[QUEUE];
 static unsigned g_head, g_tail;
 static int g_polled;
@@ -1212,101 +1277,189 @@ static void push(const SDL_Event *e)
         g_queue[g_tail++ % QUEUE] = *e;
 }
 
-static void poll_controllers(void)
+/* The controllers are sampled 60 times a second by a thread of their own
+ * (above the game's priority, woken by each vertical blank), not once a
+ * frame, and every change becomes
+ * an event, in order: at the frame rates
+ * of a race or of a screen being paged in (under 1 frame/s at worst) many
+ * taps can fall within one frame, and reading the state once a frame
+ * would see one of them, or none. (Not from the vertical blank interrupt:
+ * joypad_poll() there could hang the game while libdragon was still
+ * identifying the controllers.) Only this thread calls joypad_poll();
+ * stick motion is merged while it stays on the same side of the point
+ * where STK counts it as pushed, so a stick moved slowly does not fill the
+ * queue. */
+#define PAD_QUEUE 256
+#define PAD_ZONE  21845             /* STK counts a stick pushed past 2/3 */
+
+static SDL_Event g_pad_queue[PAD_QUEUE];
+static volatile unsigned g_pad_head, g_pad_tail;
+static joypad_inputs_t g_pad_last[JOYPAD_PORT_COUNT];
+static uint8_t g_pad_connected[JOYPAD_PORT_COUNT];
+
+static uint32_t pad_bits(const joypad_inputs_t *in)
 {
-    static uint8_t connected[JOYPAD_PORT_COUNT];
-    static joypad_inputs_t last[JOYPAD_PORT_COUNT];
-    if (!g_joypad_up)
-        return;
+    const unsigned b[N64_BUTTONS] = { in->btn.a, in->btn.b, in->btn.z,
+        in->btn.start, in->btn.l, in->btn.r, in->btn.c_up, in->btn.c_down,
+        in->btn.c_left, in->btn.c_right };
+    uint32_t m = 0;
+    for (int i = 0; i < N64_BUTTONS; i++)
+        if (b[i]) m |= 1u << i;
+    return m;
+}
+
+static unsigned pad_hat(const joypad_inputs_t *in)
+{
+    return (in->btn.d_up ? SDL_HAT_UP : 0) |
+           (in->btn.d_right ? SDL_HAT_RIGHT : 0) |
+           (in->btn.d_down ? SDL_HAT_DOWN : 0) |
+           (in->btn.d_left ? SDL_HAT_LEFT : 0);
+}
+
+static int pad_zone(int v) { return v > PAD_ZONE ? 1 : v < -PAD_ZONE ? -1 : 0; }
+
+static void pad_push(const SDL_Event *e)       /* with interrupts disabled */
+{
+    if (g_pad_tail - g_pad_head < PAD_QUEUE)
+        g_pad_queue[g_pad_tail++ % PAD_QUEUE] = *e;
+}
+
+static void pad_sample(void)
+{
     joypad_poll();
-    const uint32_t now = TICKS_READ();
+    disable_interrupts();           /* the queue: poll_controllers() */
     int index = 0;
     for (int p = 0; p < JOYPAD_PORT_COUNT; p++)
     {
         SDL_Event e;
         memset(&e, 0, sizeof(e));
         const int is = joypad_is_connected(p);
-        if (g_rumbling[p] && (int32_t)(now - g_rumble_until[p]) >= 0)
-        {
-            joypad_set_rumble_active(p, false);
-            g_rumbling[p] = 0;
-        }
-        if (is && !connected[p])
+        if (is && !g_pad_connected[p])
         {
             e.type = SDL_JOYDEVICEADDED;
             e.jdevice.which = index;
-            push(&e);
-            memset(&last[p], 0, sizeof(last[p]));
+            pad_push(&e);
+            memset(&g_pad_last[p], 0, sizeof(g_pad_last[p]));
         }
-        else if (!is && connected[p])
+        else if (!is && g_pad_connected[p])
         {
             e.type = SDL_JOYDEVICEREMOVED;
             e.jdevice.which = p;
-            push(&e);
+            pad_push(&e);
         }
-        connected[p] = is;
+        g_pad_connected[p] = is;
         if (!is)
             continue;
         index++;
         const joypad_inputs_t in = joypad_get_inputs(p);
-        const joypad_inputs_t old = last[p];
-        last[p] = in;
-        const unsigned now_b[N64_BUTTONS] = { in.btn.a, in.btn.b, in.btn.z,
-            in.btn.start, in.btn.l, in.btn.r, in.btn.c_up, in.btn.c_down,
-            in.btn.c_left, in.btn.c_right };
-        const unsigned old_b[N64_BUTTONS] = { old.btn.a, old.btn.b, old.btn.z,
-            old.btn.start, old.btn.l, old.btn.r, old.btn.c_up, old.btn.c_down,
-            old.btn.c_left, old.btn.c_right };
+        const joypad_inputs_t old = g_pad_last[p];
+        g_pad_last[p] = in;
+
+        const uint32_t now_b = pad_bits(&in), old_b = pad_bits(&old);
         for (int b = 0; b < N64_BUTTONS; b++)
         {
-            if (now_b[b] == old_b[b]) continue;
-#ifdef STK_N64_LOG_HEAP
-            debugf("[n64] controller %d button %d %s\n", p, b,
-                   now_b[b] ? "down" : "up");
-#endif
-            memset(&e, 0, sizeof(e));
-            e.type = now_b[b] ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
-            e.jbutton.which = p;
-            e.jbutton.button = b;
-            e.jbutton.state = now_b[b] ? SDL_PRESSED : SDL_RELEASED;
-            push(&e);
+            const uint32_t bit = 1u << b;
+            if ((now_b ^ old_b) & bit)
+            {
+                memset(&e, 0, sizeof(e));
+                e.type = (now_b & bit) ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
+                e.jbutton.which = p;
+                e.jbutton.button = b;
+                e.jbutton.state = (now_b & bit) ? SDL_PRESSED : SDL_RELEASED;
+                pad_push(&e);
+            }
         }
         const int8_t axes[2] = { in.stick_x, in.stick_y };
         const int8_t old_axes[2] = { old.stick_x, old.stick_y };
         for (int a = 0; a < 2; a++)
         {
-            if (axes[a] == old_axes[a]) continue;
-#ifdef STK_N64_LOG_HEAP
-            if ((axes[a] == 0) != (old_axes[a] == 0))
-                debugf("[n64] controller %d axis %d %d\n", p, a, axes[a]);
-#endif
+            if (axes[a] == old_axes[a])
+                continue;
             memset(&e, 0, sizeof(e));
             e.type = SDL_JOYAXISMOTION;
             e.jaxis.which = p;
             e.jaxis.axis = a;
             e.jaxis.value = axis_value(axes[a], a == 1);
-            push(&e);
+            /* merge with a queued motion of this axis in the same zone */
+            if (g_pad_tail != g_pad_head)
+            {
+                SDL_Event *q = &g_pad_queue[(g_pad_tail - 1) % PAD_QUEUE];
+                if (q->type == SDL_JOYAXISMOTION && q->jaxis.which == p &&
+                    q->jaxis.axis == a &&
+                    pad_zone(q->jaxis.value) == pad_zone(e.jaxis.value))
+                {
+                    q->jaxis.value = e.jaxis.value;
+                    continue;
+                }
+            }
+            pad_push(&e);
         }
-        const unsigned hat = (in.btn.d_up ? SDL_HAT_UP : 0) |
-            (in.btn.d_right ? SDL_HAT_RIGHT : 0) |
-            (in.btn.d_down ? SDL_HAT_DOWN : 0) |
-            (in.btn.d_left ? SDL_HAT_LEFT : 0);
-        const unsigned old_hat = (old.btn.d_up ? SDL_HAT_UP : 0) |
-            (old.btn.d_right ? SDL_HAT_RIGHT : 0) |
-            (old.btn.d_down ? SDL_HAT_DOWN : 0) |
-            (old.btn.d_left ? SDL_HAT_LEFT : 0);
+        const unsigned hat = pad_hat(&in), old_hat = pad_hat(&old);
         if (hat != old_hat)
         {
-#ifdef STK_N64_LOG_HEAP
-            debugf("[n64] controller %d d-pad %x\n", p, hat);
-#endif
             memset(&e, 0, sizeof(e));
             e.type = SDL_JOYHATMOTION;
             e.jhat.which = p;
             e.jhat.hat = 0;
             e.jhat.value = hat;
-            push(&e);
+            pad_push(&e);
         }
+    }
+    enable_interrupts();
+}
+
+static int pad_thread(void *arg)
+{
+    (void)arg;
+    for (;;)
+    {
+        /* woken by each vertical blank (no timer: a thread sleeping on a
+         * timer stopped being woken while screens were loading) */
+        kirq_wait_t w = kirq_begin_wait_vi();
+        kirq_wait(&w);
+        pad_sample();
+    }
+    return 0;
+}
+
+void pad_install(void)
+{
+    kthread_new("pads", 4096, 10, pad_thread, NULL);
+}
+
+static void poll_controllers(void)
+{
+    if (!g_joypad_up)
+        return;
+    const uint32_t now = TICKS_READ();
+    for (int p = 0; p < JOYPAD_PORT_COUNT; p++)
+        if (g_rumbling[p] && (int32_t)(now - g_rumble_until[p]) >= 0)
+        {
+            joypad_set_rumble_active(p, false);
+            g_rumbling[p] = 0;
+        }
+    for (;;)
+    {
+        disable_interrupts();
+        const int any = g_pad_tail != g_pad_head;
+        SDL_Event e;
+        if (any)
+            e = g_pad_queue[g_pad_head++ % PAD_QUEUE];
+        enable_interrupts();
+        if (!any)
+            break;
+#ifdef STK_N64_LOG_HEAP
+        if (e.type == SDL_JOYAXISMOTION)
+            debugf("[n64] controller %d axis %d %d\n", e.jaxis.which,
+                   e.jaxis.axis, e.jaxis.value);
+        else if (e.type == SDL_JOYBUTTONDOWN || e.type == SDL_JOYBUTTONUP)
+            debugf("[n64] controller %d button %d %s\n", e.jbutton.which,
+                   e.jbutton.button, e.type == SDL_JOYBUTTONDOWN ? "down" : "up");
+        else if (e.type == SDL_JOYHATMOTION)
+            debugf("[n64] controller %d d-pad %x\n", e.jhat.which,
+                   e.jhat.value);
+#endif
+        push(&e);
     }
 }
 

@@ -15,12 +15,15 @@ from the number of colours it finds, without quantising anything itself):
     keeps as CI4 at up to 64x64 in 2 KB -- the budget of
     n64/tools/stk_n64_assets.py. A 16-bit (RGBA16) texture would have to
     be halved to 64x32 to fit TMEM, and take twice the RAM.
-  * GUI images (gui/, skins/): at most 2048 texels (64x32 for a square
-    icon), the most any colour texture with more than 16 colours can have,
-    resized here with a proper filter rather than on the console by
-    dropping texels; 256 colours, kept as CI8.
+  * GUI images (gui/, skins/): 256 colours, kept as CI8 at most 2048
+    texels (64x32 for a square icon), the most a texture with more than 16
+    colours can have. The console gets there by dropping every other column
+    (or row); the file is filtered at the kept resolution with each texel
+    repeated, so what it keeps is a properly filtered image, and the file
+    keeps the image's proportions, which STK lays icons out from.
 
-Grey images with soft alpha (shadows, smoke) keep it: the console stores
+Single-channel images stay single-channel (STK draws them as white, with
+the image as alpha). Grey images with soft alpha (shadows, smoke) keep it: the console stores
 them as IA8 (4 bits of grey, 4 of alpha). Otherwise colours are reduced
 with dithering; alpha becomes one bit (the console's
 texture formats have one bit of alpha), and transparent texels all take the
@@ -63,9 +66,17 @@ def is_gui(path):
     return 'gui' in parts or 'skins' in parts
 
 
-def target(size, cap, gui=False):
-    w, h = (min(pot_up(v), cap) for v in size)
-    while gui and w * h > GUI_TEXELS:
+def target(size, cap):
+    return tuple(min(pot_up(v), cap) for v in size)
+
+
+def kept(size):
+    """What the console keeps of a GUI image of `size` with more than 16
+    colours: it halves the longer side (the width when square) until 2048
+    texels fit TMEM, by dropping every other column or row (sdl_n64.c,
+    halve())."""
+    w, h = size
+    while w * h > GUI_TEXELS:
         if w >= h:
             w //= 2
         else:
@@ -73,13 +84,23 @@ def target(size, cap, gui=False):
     return (w, h)
 
 
+def for_console_halving(im, size):
+    """im resized to `size` for a console that keeps only kept(size) of it:
+    filtered at that resolution, then each texel repeated, so the texels the
+    console keeps are exactly the filtered ones -- and the file keeps its
+    proportions, from which STK sizes icons."""
+    k = kept(size)
+    if k == size:
+        return im.resize(size, Image.LANCZOS)
+    return im.resize(k, Image.LANCZOS).resize(size, Image.NEAREST)
+
+
 def soft_grey(im):
     """A grey image with soft alpha (a shadow, smoke, a glow mask): the
     console keeps it as IA8, 4 bits of grey and 4 of alpha, and its alpha
     must not be cut to one bit."""
     r, g, b, a = im.split()
-    lo, hi = a.getextrema()
-    if not any(16 <= v < 240 for v in a.getdata()):
+    if not any(a.histogram()[16:240]):
         return False
     from PIL import ImageChops
     return (ImageChops.difference(r, g).getextrema()[1] <= 8 and
@@ -139,7 +160,7 @@ def rescale_skin(xml_path, data_dir, cap, sizes):
         if not path:
             return tag
         w, h = sizes.setdefault(path, Image.open(path).size)
-        tw, th = target((w, h), cap, gui=True)
+        tw, th = target((w, h), cap)
         sx, sy = tw / w, th / h
 
         def scale(attr, f):
@@ -192,11 +213,23 @@ def main():
                 print('n64_gui_images: %s: %s' % (p, e), file=sys.stderr)
                 continue
             gui = is_gui(os.path.relpath(p, a.data))
-            t = target(im.size, a.max, gui)
-            if t != im.size:
-                if im.mode not in ('RGB', 'RGBA', 'L', 'LA'):
-                    im = im.convert('RGBA' if 'transparency' in im.info or
-                                    im.mode in ('P', 'PA') else 'RGB')
+            t = target(im.size, a.max)
+            if im.mode == 'L':
+                # single channel: STK draws it as white with the image as
+                # alpha (the classic skin's background over the blue clear
+                # colour); the console keeps it as IA8 whole. Kept as is.
+                if t != im.size:
+                    im = im.resize(t, Image.LANCZOS)
+                    resized += 1
+                im.save(p, 'PNG', optimize=True)
+                continue
+            if im.mode not in ('RGB', 'RGBA', 'L', 'LA'):
+                im = im.convert('RGBA' if 'transparency' in im.info or
+                                im.mode in ('P', 'PA') else 'RGB')
+            if gui and kept(t) != t:
+                im = for_console_halving(im, t)
+                resized += 1
+            elif t != im.size:
                 im = im.resize(t, Image.LANCZOS)
                 resized += 1
             im = reduce_colours(im, GUI_COLOURS if gui else TEXTURE_COLOURS)

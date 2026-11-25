@@ -120,8 +120,19 @@ static void tlb_unmap(uint32_t block)
 /* --------------------------------------------------------------- ROM read */
 static void rom_read(void *dst, uint32_t pi, uint32_t size)
 {
+    /* A transfer libdragon started is let finish; its completion interrupt
+     * must reach libdragon, or the thread waiting for it waits forever.
+     * Whether there is one is decided by the PI being busy when we came
+     * in, not only by the interrupt flag: the flag can lag behind the end
+     * of the transfer, and a flag cleared below in that window was a hang
+     * while files were being read. The flag is also given time to settle
+     * for a transfer that ended just before. */
+    const int was_busy =
+        (*PI_STATUS & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) != 0;
     while (*PI_STATUS & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) {}
-    const int libdragon_pending = (*MI_INTERRUPT & MI_INTERRUPT_PI) != 0;
+    wait_ticks(32);                 /* < 1 us (46.875 MHz ticks) */
+    const int libdragon_pending = was_busy ||
+        (*MI_INTERRUPT & MI_INTERRUPT_PI) != 0;
     data_cache_hit_writeback_invalidate(dst, size);
     *PI_DRAM_ADDR = PhysicalAddr(dst);
     *PI_CART_ADDR = pi;

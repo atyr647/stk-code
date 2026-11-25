@@ -573,6 +573,22 @@ X##_yflip.LowerRightCorner.Y =  y1;}
 }   // calculateYFlipIfNeeded
 
 // ----------------------------------------------------------------------------
+/** Size of the focus halo drawn under focused icons, relative to its size
+ *  on a 1350x1080 screen. */
+static float focusHaloScale()
+{
+    float h = (float)irr_driver->getActualScreenSize().Height;
+    float w = (float)irr_driver->getActualScreenSize().Width;
+#ifdef N64
+    // as the text (FontWithFace::setDPI): on 320x240 the halo would be a few
+    // pixels, hidden behind the icon it marks
+    h = std::max(h, 480.0f);
+    w = std::max(w, 640.0f);
+#endif
+    return std::min(h / 1080.0f, w / 1350.0f);
+}   // focusHaloScale
+
+// ----------------------------------------------------------------------------
 #if 0
 #pragma mark -
 #endif
@@ -1275,8 +1291,7 @@ void Skin::drawRatingBar(Widget *w, const core::recti &rect,
 
         core::recti source_area = core::recti(0, 0, texture_w, texture_h);
 
-        float scale = (float)std::min(irr_driver->getActualScreenSize().Height / 1080.0f,
-                                    irr_driver->getActualScreenSize().Width / 1350.0f);
+        float scale = focusHaloScale();
         int size = (int)((90.0f + grow) * scale);
         const core::recti rect2(glow_center_x - size,
                                 glow_center_y - size / 2,
@@ -1677,8 +1692,7 @@ void Skin::drawRibbonChild(const core::recti &rect, Widget* widget,
 
                 core::recti source_area(0, 0, texture_w, texture_h);
 
-                float scale = (float)std::min(irr_driver->getActualScreenSize().Height / 1080.0f,
-                                            irr_driver->getActualScreenSize().Width / 1350.0f);
+                float scale = focusHaloScale();
                 int size = (int)((90.0f + grow) * scale);
                 const core::recti rect2(glow_center_x - size,
                                         glow_center_y - size / 2,
@@ -2018,8 +2032,7 @@ void Skin::drawIconButton(const core::recti &rect, Widget* widget,
 
         core::recti source_area = core::recti(0, 0, texture_w, texture_h);
 
-        float scale = (float)std::min(irr_driver->getActualScreenSize().Height / 1080.0f,
-                                    irr_driver->getActualScreenSize().Width / 1350.0f);
+        float scale = focusHaloScale();
         int size = (int)((90.0f + grow) * scale);
         const core::recti rect2(glow_center_x - size,
                                 glow_center_y - size / 2,
