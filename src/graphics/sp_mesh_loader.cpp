@@ -566,6 +566,14 @@ void SPMeshLoader::decompress(irr::io::IReadFile* spm, unsigned vertices_count,
     const unsigned idx_size = vertices_count > 255 ? 2 : 1;
     std::vector<std::pair<std::array<short, 4>, std::array<float, 4> > >
         cur_joints;
+    // The count is known: one allocation, instead of an array that doubles
+    // as it grows (twice the size while loading, up to twice after).
+    if (uv_two)
+        mb->Vertices_2TCoords.reallocate(vertices_count);
+    else
+        mb->Vertices_Standard.reallocate(vertices_count);
+    if (vt == SPVT_SKINNED)
+        cur_joints.reserve(vertices_count);
     for (unsigned i = 0; i < vertices_count; i++)
     {
         video::S3DVertex2TCoords vertex;

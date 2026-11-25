@@ -373,13 +373,20 @@ static const struct { const char *name; void *fn; } g_gl_unsupported[] =
  * only, has no glTexSubImage2D, and the RDP samples from TMEM: 4 KB.
  *
  * So glTexImage2D/glTexSubImage2D/glBindTexture/glDeleteTextures are
- * wrapped: each texture's image becomes a libdragon surface owned here,
- *   - intensity+alpha (IA8: 64x64 fits) when it is a single-channel mask,
- *   - RGBA 5551 (RGBA16: 2048 texels fit) otherwise,
- * resampled to power-of-two sides (the RDP wraps only those) that fit TMEM
- * (sub-image updates map through the same ratio), and is given to libdragon
- * with glSurfaceTexImageN64, again after each update. Mip levels above 0
- * are ignored. libdragon's surfaces are uncached: no cache maintenance. */
+ * wrapped: each texture's image is resampled to power-of-two sides (the RDP
+ * wraps only those; sub-image updates map through the same ratio) and kept
+ * here as a libdragon sprite in the smallest format that holds it exactly:
+ *   - IA8 (intensity+alpha) for single-channel masks (font pages): 64x64;
+ *   - CI4 (16-colour palette) when the image has at most 16 colours (in
+ *     RGBA 5551): 64x64 fits TMEM next to its palette, in 2 KB;
+ *   - otherwise at most 2048 texels (64x32): CI8 when it has at most 256
+ *     colours, RGBA16 (5551) when it has more.
+ * Nothing is quantised here: n64/tools/n64_gui_images.py reduces the colours
+ * of the cartridge's images when the ROM is built, with dithering, and this
+ * only finds out how many there are. libdragon's GL takes palettised images
+ * only as sprites (glSpriteTextureN64), which carry their palette; the
+ * sprite is given again after each update. Mip levels above 0 are ignored.
+ * Sprites are in uncached memory, which the RDP reads directly. */
 #define TMEM_BYTES 4096
 /* desktop GL enums libdragon's headers do not define (standard values) */
 #ifndef GL_BGR
@@ -401,9 +408,11 @@ static const struct { const char *name; void *fn; } g_gl_unsupported[] =
 typedef struct
 {
     GLuint    name;
-    surface_t surf;
+    sprite_t *spr;                /* what libdragon draws from */
+    uint32_t  spr_bytes;
     uint16_t  src_w, src_h;       /* the image as the program sees it */
     uint8_t   used;
+    uint8_t   mask;               /* single-channel: IA8 */
 } n64_tex_t;
 
 static n64_tex_t *g_tex;
@@ -443,15 +452,61 @@ static n64_tex_t *tex_find(GLuint name, int create)
 /* textures in RDRAM, for the heap log (n64_main.cpp) */
 unsigned stk_n64_tex_bytes, stk_n64_tex_count;
 
+/* A sprite as mksprite would write it: header, pixels, extended header,
+ * palette (libdragon src/sprite_internal.h, version 6). */
+#define SPR_EXT_SIZE      128
+#define SPR_EXT_VERSION   6
+#define SPR_FLAG_FITS_TMEM 0x0020
+
+static uint32_t spr_pixel_bytes(tex_format_t fmt, int w, int h)
+{
+    return (TEX_FORMAT_PIX2BYTES(fmt, w) * h + 7) & ~7u;
+}
+
+static sprite_t *spr_alloc(tex_format_t fmt, int w, int h, int colours,
+                           uint32_t *bytes)
+{
+    const uint32_t pix = spr_pixel_bytes(fmt, w, h);
+    const uint32_t pal = colours ? (uint32_t)colours * 2 : 0;
+    const uint32_t total = 8 + pix + SPR_EXT_SIZE + ((pal + 7) & ~7u);
+    uint8_t *b = malloc_uncached_aligned(16, total);
+    if (!b)
+        return NULL;
+    memset(b, 0, total);
+    sprite_t *spr = (sprite_t*)b;
+    spr->width = w;
+    spr->height = h;
+    b[4] = TEX_FORMAT_BITDEPTH(fmt);            /* deprecated bitdepth */
+    b[5] = fmt | SPRITE_FLAGS_EXT;              /* flags */
+    spr->hslices = 1;
+    spr->vslices = 1;
+    uint8_t *ext = b + 8 + pix;
+    *(uint16_t*)(ext + 0) = SPR_EXT_SIZE;
+    *(uint16_t*)(ext + 2) = SPR_EXT_VERSION;
+    *(uint32_t*)(ext + 4) = pal ? 8 + pix + SPR_EXT_SIZE : 0;  /* palette */
+    *(uint16_t*)(ext + 64) = SPR_FLAG_FITS_TMEM;
+    ext[66] = (uint8_t)colours;                 /* used colours, 0 = 256 */
+    *bytes = total;
+    return spr;
+}
+
+static uint16_t *spr_palette(sprite_t *spr)
+{
+    return sprite_get_palette(spr);
+}
+
 static void tex_release(n64_tex_t *t)
 {
-    if (t->surf.buffer)
+    if (t->spr)
     {
-        stk_n64_tex_bytes -= t->surf.stride * t->surf.height;
+        /* the RDP may still have to read it for a frame in flight */
+        rspq_wait();
+        stk_n64_tex_bytes -= t->spr_bytes;
         stk_n64_tex_count--;
-        surface_free(&t->surf);
+        free_uncached(t->spr);
     }
-    memset(&t->surf, 0, sizeof(t->surf));
+    t->spr = NULL;
+    t->spr_bytes = 0;
 }
 
 /* one source pixel as 8-bit RGBA; returns 0 for an unknown format */
@@ -551,16 +606,16 @@ static int bytes_per_pixel(GLenum format, GLenum type)
     }
 }
 
-/* write source rectangle (x, y, w, h) of data into t->surf: each surface
- * texel the rectangle covers takes the source texel it maps to (nearest) */
-static void tex_store(n64_tex_t *t, int x, int y, int w, int h,
-                      GLenum format, GLenum type, const void *data)
+/* write source rectangle (x, y, w, h) of data, from an image of sw x sh,
+ * into dst: each texel of dst the rectangle covers takes the source texel
+ * it maps to (nearest). dst is RGBA16 or IA8. */
+static void tex_store(surface_t *dst, int sw, int sh, int x, int y, int w,
+                      int h, GLenum format, GLenum type, const void *data)
 {
-    const tex_format_t fmt = surface_get_format(&t->surf);
+    const tex_format_t fmt = surface_get_format(dst);
     const int bpp = bytes_per_pixel(format, type);
-    const int dw = t->surf.width, dh = t->surf.height;
-    const int sw = t->src_w, sh = t->src_h;
-    uint8_t *dst = t->surf.buffer;
+    const int dw = dst->width, dh = dst->height;
+    uint8_t *out = dst->buffer;
     const int dx0 = x * dw / sw, dy0 = y * dh / sh;
     const int dx1 = ((x + w) * dw + sw - 1) / sw;
     const int dy1 = ((y + h) * dh + sh - 1) / sh;
@@ -581,15 +636,204 @@ static void tex_store(n64_tex_t *t, int x, int y, int w, int h,
             if (fmt == FMT_IA8)
             {
                 const uint8_t i = (c[0] + c[1] + c[2]) / 3;
-                dst[dy * t->surf.stride + dx] = (i & 0xF0) | (c[3] >> 4);
+                out[dy * dst->stride + dx] = (i & 0xF0) | (c[3] >> 4);
             }
             else
             {
                 const uint16_t v = ((c[0] >> 3) << 11) | ((c[1] >> 3) << 6) |
                                    ((c[2] >> 3) << 1) | (c[3] >= 128);
-                ((uint16_t*)(dst + dy * t->surf.stride))[dx] = v;
+                ((uint16_t*)(out + dy * dst->stride))[dx] = v;
             }
         }
+    }
+}
+
+/* working images (RGBA16) are in ordinary, cached memory: only the CPU
+ * touches them */
+static surface_t work_alloc(int w, int h)
+{
+    void *b = malloc(w * h * 2);
+    if (!b)
+        return (surface_t){ 0 };
+    return surface_make_linear(b, FMT_RGBA16, w, h);
+}
+
+static void work_free(surface_t *img)
+{
+    free(img->buffer);
+    img->buffer = NULL;
+}
+
+/* --- palettes: the distinct RGBA16 values of an image, at most max ---- */
+static uint32_t g_seen[65536 / 32];          /* one bit per RGBA16 value */
+
+static int count_colours(const surface_t *img, uint16_t *list, int max)
+{
+    int n = 0;
+    for (int y = 0; y < img->height && n <= max; y++)
+    {
+        const uint16_t *row = (const uint16_t*)((uint8_t*)img->buffer +
+                                                y * img->stride);
+        for (int x = 0; x < img->width; x++)
+        {
+            const uint16_t v = row[x];
+            if (g_seen[v >> 5] & (1u << (v & 31)))
+                continue;
+            g_seen[v >> 5] |= 1u << (v & 31);
+            if (n == max) { n++; break; }   /* one too many: stop */
+            list[n++] = v;
+        }
+    }
+    /* clear what was set (the overflowing value is not in the list) */
+    for (int y = 0; y < img->height; y++)
+    {
+        const uint16_t *row = (const uint16_t*)((uint8_t*)img->buffer +
+                                                y * img->stride);
+        for (int x = 0; x < img->width; x++)
+            g_seen[row[x] >> 5] = 0;
+    }
+    return n;
+}
+
+static int palette_index(const uint16_t *pal, int n, uint16_t v)
+{
+    int lo = 0, hi = n - 1;                  /* pal is sorted */
+    while (lo < hi)
+    {
+        const int mid = (lo + hi) / 2;
+        if (pal[mid] < v) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+/* the image of a colour texture, as RGBA16, in a new (cached) surface */
+static surface_t tex_unpack(n64_tex_t *t)
+{
+    const tex_format_t fmt = sprite_get_format(t->spr);
+    const int w = t->spr->width, h = t->spr->height;
+    surface_t img = work_alloc(w, h);
+    if (!img.buffer)
+        return img;
+    const surface_t px = sprite_get_pixels(t->spr);
+    const uint16_t *pal = spr_palette(t->spr);
+    for (int y = 0; y < h; y++)
+    {
+        uint16_t *out = (uint16_t*)((uint8_t*)img.buffer + y * img.stride);
+        const uint8_t *in = (const uint8_t*)px.buffer + y * px.stride;
+        for (int x = 0; x < w; x++)
+        {
+            if (fmt == FMT_CI4)
+                out[x] = pal[(in[x / 2] >> ((x & 1) ? 0 : 4)) & 15];
+            else if (fmt == FMT_CI8)
+                out[x] = pal[in[x]];
+            else
+                out[x] = ((const uint16_t*)in)[x];
+        }
+    }
+    return img;
+}
+
+/* img with its longer side halved (nearest) */
+static surface_t halve(const surface_t *img)
+{
+    const int w = img->width >= img->height ? img->width / 2 : img->width;
+    const int h = img->width >= img->height ? img->height : img->height / 2;
+    surface_t out = work_alloc(w, h);
+    if (!out.buffer)
+        return out;
+    const int sx = img->width / w, sy = img->height / h;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            ((uint16_t*)((uint8_t*)out.buffer + y * out.stride))[x] =
+                ((const uint16_t*)((const uint8_t*)img->buffer +
+                                   y * sy * img->stride))[x * sx];
+    return out;
+}
+
+static void tex_give(n64_tex_t *t, sprite_t *spr, uint32_t bytes)
+{
+    tex_release(t);
+    t->spr = spr;
+    t->spr_bytes = bytes;
+    stk_n64_tex_bytes += bytes;
+    stk_n64_tex_count++;
+    glSpriteTextureN64(GL_TEXTURE_2D, spr, NULL);
+}
+
+/* make img (RGBA16, at most 4096 texels) the texture's image, in the
+ * smallest exact format; img is freed. Returns 0 when it does not fit
+ * TMEM in any (more than 16 colours in more than 2048 texels). */
+static int tex_pack(n64_tex_t *t, surface_t *img)
+{
+    uint16_t pal[256];
+    const int w = img->width, h = img->height;
+    const int n = count_colours(img, pal, 256);
+    tex_format_t fmt;
+    if (n <= 16)
+        fmt = FMT_CI4;
+    else if (w * h > TMEM_BYTES / 2)
+        return 0;
+    else
+        fmt = n <= 256 ? FMT_CI8 : FMT_RGBA16;
+    const int colours = fmt == FMT_CI4 ? 16 : fmt == FMT_CI8 ? 256 : 0;
+    uint32_t bytes;
+    sprite_t *spr = spr_alloc(fmt, w, h, colours, &bytes);
+    if (!spr)
+    {
+        work_free(img);
+        return 1;
+    }
+    surface_t px = sprite_get_pixels(spr);
+    if (fmt == FMT_RGBA16)
+    {
+        for (int y = 0; y < h; y++)
+            memcpy((uint8_t*)px.buffer + y * px.stride,
+                   (uint8_t*)img->buffer + y * img->stride, w * 2);
+    }
+    else
+    {
+        for (int i = 1; i < n; i++)          /* sort: n is small */
+        {
+            const uint16_t v = pal[i];
+            int j = i;
+            for (; j > 0 && pal[j - 1] > v; j--)
+                pal[j] = pal[j - 1];
+            pal[j] = v;
+        }
+        uint16_t *spal = spr_palette(spr);
+        for (int i = 0; i < n; i++)
+            spal[i] = pal[i];
+        for (int y = 0; y < h; y++)
+        {
+            const uint16_t *in = (const uint16_t*)((uint8_t*)img->buffer +
+                                                   y * img->stride);
+            uint8_t *out = (uint8_t*)px.buffer + y * px.stride;
+            for (int x = 0; x < w; x++)
+            {
+                const int i = palette_index(pal, n, in[x]);
+                if (fmt == FMT_CI8)
+                    out[x] = i;
+                else if (x & 1)
+                    out[x / 2] |= i;
+                else
+                    out[x / 2] = i << 4;
+            }
+        }
+    }
+    work_free(img);
+    tex_give(t, spr, bytes);
+    return 1;
+}
+
+/* tex_pack, halving the image until it fits */
+static void tex_pack_fit(n64_tex_t *t, surface_t *img)
+{
+    while (img->buffer && !tex_pack(t, img))
+    {
+        surface_t half = halve(img);
+        work_free(img);
+        *img = half;
     }
 }
 
@@ -622,26 +866,36 @@ static void n64_glTexImage2D(GLenum target, GLint level, GLint internalformat,
         return;
     }
     const int mask = format == GL_RED || format == GL_ALPHA;
-    const tex_format_t fmt = mask ? FMT_IA8 : FMT_RGBA16;
-    const int bytes = mask ? 1 : 2;
     int dw = nearest_pot(width), dh = nearest_pot(height);
-    while (dw * dh * bytes > TMEM_BYTES)
+    while (dw * dh > TMEM_BYTES)          /* IA8 and CI4: 4096 texels */
     {
         if (dw >= dh) dw /= 2;
         else dh /= 2;
     }
-    tex_release(t);
-    t->surf = surface_alloc(fmt, dw, dh);
-    if (!t->surf.buffer)
-        return;
-    stk_n64_tex_bytes += t->surf.stride * t->surf.height;
-    stk_n64_tex_count++;
     t->src_w = width;
     t->src_h = height;
-    memset(t->surf.buffer, 0, t->surf.stride * t->surf.height);
+    t->mask = mask;
+    if (mask)
+    {
+        uint32_t bytes;
+        sprite_t *spr = spr_alloc(FMT_IA8, dw, dh, 0, &bytes);
+        if (!spr)
+            return;
+        surface_t px = sprite_get_pixels(spr);
+        if (data)
+            tex_store(&px, width, height, 0, 0, width, height, format, type,
+                      data);
+        tex_give(t, spr, bytes);
+        return;
+    }
+    surface_t img = work_alloc(dw, dh);
+    if (!img.buffer)
+        return;
+    memset(img.buffer, 0, img.stride * img.height);
     if (data)
-        tex_store(t, 0, 0, width, height, format, type, data);
-    glSurfaceTexImageN64(GL_TEXTURE_2D, 0, &t->surf, NULL);
+        tex_store(&img, width, height, 0, 0, width, height, format, type,
+                  data);
+    tex_pack_fit(t, &img);
 }
 
 static void n64_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
@@ -651,10 +905,21 @@ static void n64_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
     if (target != GL_TEXTURE_2D || level != 0 || !data || w <= 0 || h <= 0)
         return;
     n64_tex_t *t = tex_find(g_bound_2d, 0);
-    if (!t || !t->surf.buffer)
+    if (!t || !t->spr)
         return;
-    tex_store(t, x, y, w, h, format, type, data);
-    glSurfaceTexImageN64(GL_TEXTURE_2D, 0, &t->surf, NULL);   /* re-upload */
+    if (t->mask)
+    {
+        /* font pages: changed in place, given again to be re-uploaded */
+        surface_t px = sprite_get_pixels(t->spr);
+        tex_store(&px, t->src_w, t->src_h, x, y, w, h, format, type, data);
+        glSpriteTextureN64(GL_TEXTURE_2D, t->spr, NULL);
+        return;
+    }
+    surface_t img = tex_unpack(t);
+    if (!img.buffer)
+        return;
+    tex_store(&img, t->src_w, t->src_h, x, y, w, h, format, type, data);
+    tex_pack_fit(t, &img);
 }
 
 static void n64_glBindTexture(GLenum target, GLuint name)
@@ -942,6 +1207,10 @@ static void poll_controllers(void)
         for (int a = 0; a < 2; a++)
         {
             if (axes[a] == old_axes[a]) continue;
+#ifdef STK_N64_LOG_HEAP
+            if ((axes[a] == 0) != (old_axes[a] == 0))
+                debugf("[n64] controller %d axis %d %d\n", p, a, axes[a]);
+#endif
             memset(&e, 0, sizeof(e));
             e.type = SDL_JOYAXISMOTION;
             e.jaxis.which = p;
@@ -959,6 +1228,9 @@ static void poll_controllers(void)
             (old.btn.d_left ? SDL_HAT_LEFT : 0);
         if (hat != old_hat)
         {
+#ifdef STK_N64_LOG_HEAP
+            debugf("[n64] controller %d d-pad %x\n", p, hat);
+#endif
             memset(&e, 0, sizeof(e));
             e.type = SDL_JOYHATMOTION;
             e.jhat.which = p;

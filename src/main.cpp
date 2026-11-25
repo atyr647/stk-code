@@ -1913,7 +1913,19 @@ void initUserConfig()
 {
     file_manager = new FileManager();
     user_config  = new UserConfig();     // needs file_manager
+#ifdef N64
+    if (!user_config->loadConfig())
+    {
+        // First start: STK's lowest graphics preset (as for weak hardware:
+        // particles only where they matter, static characters, least
+        // geometry detail). It can be changed in the options as usual.
+        GraphicalPresets::initPresets();
+        GraphicalPresets::applyGFXPreset(1);
+        user_config->saveConfig();
+    }
+#else
     user_config->loadConfig();
+#endif
     // Some parts of the file manager needs user config (paths for models
     // depend on artist debug flag). So init the rest of the file manager
     // after reading the user config file.

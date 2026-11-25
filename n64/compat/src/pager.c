@@ -46,7 +46,7 @@
 #define PI_CLEAR_INTERRUPT 0x02    /* PI_STATUS write: acknowledge (dma.c) */
 
 #ifndef STK_N64_PAGER_FRAMES
-#define STK_N64_PAGER_FRAMES (1536 * 1024 / BLOCK_SIZE)     /* 1.5 MB */
+#define STK_N64_PAGER_FRAMES (1024 * 1024 / BLOCK_SIZE)     /* 1 MB */
 #endif
 
 extern char __paged_start[], __paged_end[];   /* n64_paged.ld */

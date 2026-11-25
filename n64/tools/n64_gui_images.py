@@ -7,9 +7,25 @@ the driver's maximum (GE::getResizingTarget). It does so after decoding the
 file at full size, which for STK's desktop-sized GUI art (a 2048x1024 skin
 background) needs megabytes the console does not have.
 
-So each image is stored at exactly the size STK would resize it to: each
-side rounded up to a power of two, then capped at 64. Nothing is resized at
-run time, and decoding takes a few KB.
+So each image is stored at the size the console will draw it at, and with
+the colours it can keep (n64/compat/src/sdl_n64.c picks the texture format
+from the number of colours it finds, without quantising anything itself):
+
+  * 3D textures (tracks, karts, models, ...): 16 colours, which the console
+    keeps as CI4 at up to 64x64 in 2 KB -- the budget of
+    n64/tools/stk_n64_assets.py. A 16-bit (RGBA16) texture would have to
+    be halved to 64x32 to fit TMEM, and take twice the RAM.
+  * GUI images (gui/, skins/): at most 2048 texels (64x32 for a square
+    icon), the most any colour texture with more than 16 colours can have,
+    resized here with a proper filter rather than on the console by
+    dropping texels; 256 colours, kept as CI8.
+
+Colours are reduced with dithering; alpha becomes one bit (the console's
+texture formats have one bit of alpha), and transparent texels all take the
+average colour of the opaque ones, so they cost one palette entry and
+filtering does not bleed a stray colour into edges. Images are written as
+PNG whatever their name (STK recognises PNG data in a .jpg by its content):
+JPEG compression would bring back the colours just removed.
 
 The skins give 9-slice borders in pixels of their images (left_border, ...,
 see data/skins/SKIN_MAKING.md); STK applies them to the texture's size. They
@@ -35,8 +51,50 @@ def pot_up(n):
     return p
 
 
-def target(size, cap):
-    return tuple(min(pot_up(v), cap) for v in size)
+GUI_TEXELS = 2048          # sdl_n64.c: CI8 / RGBA16 in TMEM
+GUI_COLOURS = 256
+TEXTURE_COLOURS = 16       # CI4
+
+
+def is_gui(path):
+    parts = path.replace(os.sep, '/').split('/')
+    return 'gui' in parts or 'skins' in parts
+
+
+def target(size, cap, gui=False):
+    w, h = (min(pot_up(v), cap) for v in size)
+    while gui and w * h > GUI_TEXELS:
+        if w >= h:
+            w //= 2
+        else:
+            h //= 2
+    return (w, h)
+
+
+def reduce_colours(im, colours):
+    """im (any mode) as RGBA with at most `colours` colours, 1-bit alpha."""
+    im = im.convert('RGBA')
+    alpha = im.getchannel('A').point(lambda a: 255 if a >= 128 else 0)
+    opaque = alpha.getbbox() is not None
+    rgb = im.convert('RGB')
+    transparent = alpha.getextrema()[0] == 0
+    if transparent and opaque:
+        # transparent texels: the opaque texels' average colour
+        from PIL import ImageStat
+        mean = tuple(int(round(v)) for v in ImageStat.Stat(rgb, alpha).mean)
+        rgb.paste(Image.new('RGB', rgb.size, mean),
+                  mask=alpha.point(lambda a: 255 - a))
+    n = colours - 1 if transparent else colours
+    # in the console's 5 bits per channel, so palette entries stay distinct
+    rgb = rgb.point(lambda v: (v & 0xF8) | (v >> 5))
+    q = rgb.quantize(colors=max(n, 1), method=Image.Quantize.MEDIANCUT,
+                     dither=Image.Dither.FLOYDSTEINBERG).convert('RGB')
+    if transparent and opaque:
+        q.paste(Image.new('RGB', q.size, mean),
+                mask=alpha.point(lambda a: 255 - a))
+    out = q.convert('RGBA')
+    out.putalpha(alpha)
+    return out
 
 
 def resolve(skin_dir, data_dir, name):
@@ -63,7 +121,7 @@ def rescale_skin(xml_path, data_dir, cap, sizes):
         if not path:
             return tag
         w, h = sizes.setdefault(path, Image.open(path).size)
-        tw, th = target((w, h), cap)
+        tw, th = target((w, h), cap, gui=True)
         sx, sy = tw / w, th / h
 
         def scale(attr, f):
@@ -101,7 +159,7 @@ def main():
                 skins += rescale_skin(os.path.join(root, f), a.data, a.max,
                                       sizes)
 
-    resized = 0
+    resized = reduced = 0
     for root, _, files in os.walk(a.data):
         for f in files:
             if not f.lower().endswith(EXTS):
@@ -115,21 +173,19 @@ def main():
             except Exception as e:      # not an image STK could load either
                 print('n64_gui_images: %s: %s' % (p, e), file=sys.stderr)
                 continue
-            t = target(im.size, a.max)
-            if t == im.size:
-                continue
-            fmt = im.format
-            if im.mode not in ('RGB', 'RGBA', 'L', 'LA'):
-                im = im.convert('RGBA' if 'transparency' in im.info or
-                                im.mode in ('P', 'PA') else 'RGB')
-            im = im.resize(t, Image.LANCZOS)
-            if fmt == 'JPEG':
-                im.convert('RGB').save(p, 'JPEG', quality=92)
-            else:
-                im.save(p, 'PNG', optimize=True)
-            resized += 1
-    print('n64_gui_images: %d images resized, %d skin elements rescaled'
-          % (resized, skins))
+            gui = is_gui(os.path.relpath(p, a.data))
+            t = target(im.size, a.max, gui)
+            if t != im.size:
+                if im.mode not in ('RGB', 'RGBA', 'L', 'LA'):
+                    im = im.convert('RGBA' if 'transparency' in im.info or
+                                    im.mode in ('P', 'PA') else 'RGB')
+                im = im.resize(t, Image.LANCZOS)
+                resized += 1
+            im = reduce_colours(im, GUI_COLOURS if gui else TEXTURE_COLOURS)
+            im.save(p, 'PNG', optimize=True)
+            reduced += 1
+    print('n64_gui_images: %d images resized, %d colour-reduced, %d skin '
+          'elements rescaled' % (resized, reduced, skins))
 
 
 if __name__ == '__main__':
