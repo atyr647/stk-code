@@ -115,6 +115,55 @@ const LanguageList* Translations::getLanguageList() const
 #endif
 
 // ----------------------------------------------------------------------------
+/** Reads thaidict.txt (used to find line breaks in Thai text) into g_thai_dict.
+ */
+static void loadThaiDictionary()
+{
+    const std::string file_name = file_manager->getAsset("thaidict.txt");
+    try
+    {
+        std::ifstream in(FileUtils::getPortableReadingPath(file_name));
+        if (!in.is_open())
+        {
+            Log::error("translation", "error: failure opening: '%s'.",
+                file_name.c_str());
+        }
+        else
+        {
+            std::string line;
+            while (!StringUtils::safeGetline(in, line).eof())
+            {
+                const std::u32string& u32line = StringUtils::utf8ToUtf32(line);
+                if (u32line.empty())
+                    continue;
+                char32_t thai = u32line[0];
+                if (!isThaiCP(thai))
+                    continue;
+                if (g_thai_dict.find(thai) == g_thai_dict.end())
+                {
+                    g_thai_dict[thai] =
+                        {
+                            std::make_pair(
+                                std::unordered_set<std::u32string>{u32line},
+                                u32line.size())
+                        };
+                    continue;
+                }
+                auto& ret = g_thai_dict.at(thai);
+                ret.first.insert(u32line);
+                if (ret.second < u32line.size())
+                    ret.second = u32line.size();
+            }
+        }
+    }
+    catch (std::exception& e)
+    {
+        Log::error("translation", "error: failure extract Thai dictionary.");
+        Log::error("translation", "%s", e.what());
+    }
+}   // loadThaiDictionary
+
+// ----------------------------------------------------------------------------
 Translations::Translations() //: m_dictionary_manager("UTF-16")
 {
 #ifndef SERVER_ONLY
@@ -261,51 +310,12 @@ Translations::Translations() //: m_dictionary_manager("UTF-16")
         }
     }
 
+#ifndef STK_LOW_MEMORY
+    // (STK_LOW_MEMORY: built the first time Thai text needs breaking, see
+    // insertThaiBreakMark: the dictionary takes about 3.4 MB)
     if (g_thai_dict.empty())
-    {
-        const std::string file_name = file_manager->getAsset("thaidict.txt");
-        try
-        {
-            std::ifstream in(FileUtils::getPortableReadingPath(file_name));
-            if (!in.is_open())
-            {
-                Log::error("translation", "error: failure opening: '%s'.",
-                    file_name.c_str());
-            }
-            else
-            {
-                std::string line;
-                while (!StringUtils::safeGetline(in, line).eof())
-                {
-                    const std::u32string& u32line = StringUtils::utf8ToUtf32(line);
-                    if (u32line.empty())
-                        continue;
-                    char32_t thai = u32line[0];
-                    if (!isThaiCP(thai))
-                        continue;
-                    if (g_thai_dict.find(thai) == g_thai_dict.end())
-                    {
-                        g_thai_dict[thai] =
-                            {
-                                std::make_pair(
-                                    std::unordered_set<std::u32string>{u32line},
-                                    u32line.size())
-                            };
-                        continue;
-                    }
-                    auto& ret = g_thai_dict.at(thai);
-                    ret.first.insert(u32line);
-                    if (ret.second < u32line.size())
-                        ret.second = u32line.size();
-                }
-            }
-        }
-        catch (std::exception& e)
-        {
-            Log::error("translation", "error: failure extract Thai dictionary.");
-            Log::error("translation", "%s", e.what());
-        }
-    }
+        loadThaiDictionary();
+#endif
     // LC_ALL does not work, sscanf will then not always be able
     // to scan for example: s=-1.1,-2.3,-3.3 correctly, which is
     // used in driveline files.
@@ -806,6 +816,10 @@ void Translations::insertThaiBreakMark(const std::u32string& thai,
             i++;
             continue;
         }
+#ifdef STK_LOW_MEMORY
+        if (g_thai_dict.empty())
+            loadThaiDictionary();
+#endif
         auto ret = g_thai_dict.find(t);
         if (ret == g_thai_dict.end())
         {

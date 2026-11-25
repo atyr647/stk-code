@@ -13,6 +13,9 @@ SRC="$(realpath "$1")"; PREFIX="$(realpath -m "$2")"
 TC="$(realpath "$(dirname "$0")")/toolchain-libdragon.cmake"
 JOBS="${JOBS:-$(nproc)}"
 export N64_DEPS_PREFIX="$PREFIX"
+# the client's code is paged (n64/compat/src/pager.c): calls from it into the
+# resident C library cross 256 MB, beyond a jal
+LONG_CALLS="-mlong-calls"
 # TARGET=<name>: build only that target (and install by hand, see jpeg)
 build() {
     local name="$1"; shift
@@ -22,7 +25,8 @@ build() {
         -DCMAKE_TOOLCHAIN_FILE="$TC" -DCMAKE_BUILD_TYPE=MinSizeRel \
         -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_PREFIX_PATH="$PREFIX" \
         -DCMAKE_POLICY_DEFAULT_CMP0074=NEW -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF "$@" \
+        -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF \
+        "-DCMAKE_C_FLAGS=$LONG_CALLS" "-DCMAKE_CXX_FLAGS=$LONG_CALLS" "$@" \
         > "$SRC/n64build-$name.log" 2>&1 || { tail -30 "$SRC/n64build-$name.log"; exit 1; }
     cmake --build "$SRC/n64build-$name" -j"$JOBS" ${TARGET:+--target "$TARGET"} \
         >> "$SRC/n64build-$name.log" 2>&1 ||
@@ -50,7 +54,7 @@ build freetype -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON \
 build harfbuzz -DHB_HAVE_FREETYPE=ON -DHB_BUILD_SUBSET=OFF -DHB_HAVE_GLIB=OFF \
                -DHB_HAVE_ICU=OFF -DHB_HAVE_GOBJECT=OFF -DHB_BUILD_UTILS=OFF \
                -DCMAKE_DISABLE_FIND_PACKAGE_Threads=ON \
-               "-DCMAKE_CXX_FLAGS=-DHB_NO_MT -DHB_NO_MMAP"
+               "-DCMAKE_CXX_FLAGS=$LONG_CALLS -DHB_NO_MT -DHB_NO_MMAP"
 build ogg      -DINSTALL_DOCS=OFF
 build vorbis
 build libsamplerate -DLIBSAMPLERATE_EXAMPLES=OFF

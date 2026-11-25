@@ -239,6 +239,10 @@ private:
      *  a power of two. */
     virtual unsigned int getGlyphPageSize() const = 0;
     // ------------------------------------------------------------------------
+    /** The glyph page size, at most the largest texture the driver can use
+     *  (64 on the N64). */
+    unsigned int glyphPageSize() const;
+    // ------------------------------------------------------------------------
     /** Defined by sub-class about the scaling factor 1. */
     virtual float getScalingFactorOne() const = 0;
     // ------------------------------------------------------------------------

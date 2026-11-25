@@ -17,6 +17,8 @@
  * the next framebuffer with the Z buffer, GL context begun), so GL can be
  * called at any time, including texture uploads while loading.
  */
+/* debugf() is compiled out under NDEBUG; this file's messages are wanted */
+#undef NDEBUG
 #include <libdragon.h>
 #include <GL/gl.h>
 #include <GL/gl_integration.h>
@@ -343,11 +345,355 @@ static const struct { const char *name; void *fn; } g_gl_procs[] =
 #undef GL_PROC
 };
 
+/* GL 1.x functions libdragon does not implement: a no-op that says so once.
+ * Every caller ignores or tolerates the result of these on this ABI: the
+ * arguments are in registers (or the caller's frame) and a returning one
+ * reads 0. */
+#define GL_UNSUPPORTED_PROC(f) \
+    static int stub_##f(void) \
+    { \
+        static int said; \
+        if (!said++) debugf("GL: %s is not supported, ignored\n", #f); \
+        return 0; \
+    }
+#include "sdl_n64_gl_unsupported.h"
+#undef GL_UNSUPPORTED_PROC
+
+static const struct { const char *name; void *fn; } g_gl_unsupported[] =
+{
+#define GL_UNSUPPORTED_PROC(f) { #f, (void*)stub_##f },
+#include "sdl_n64_gl_unsupported.h"
+#undef GL_UNSUPPORTED_PROC
+};
+
+/* ------------------------------------------------------ GL textures --
+ * Irrlicht's driver and STK's graphics_engine upload textures the desktop
+ * way (32-bit BGRA, BGR, 16-bit packed, single-channel GL_RED for font
+ * pages) and update them with glTexSubImage2D. libdragon's GL takes RGBA
+ * only, has no glTexSubImage2D, and the RDP samples from TMEM: 4 KB.
+ *
+ * So glTexImage2D/glTexSubImage2D/glBindTexture/glDeleteTextures are
+ * wrapped: each texture's image becomes a libdragon surface owned here,
+ *   - intensity+alpha (IA8: 64x64 fits) when it is a single-channel mask,
+ *   - RGBA 5551 (RGBA16: 2048 texels fit) otherwise,
+ * resampled to power-of-two sides (the RDP wraps only those) that fit TMEM
+ * (sub-image updates map through the same ratio), and is given to libdragon
+ * with glSurfaceTexImageN64, again after each update. Mip levels above 0
+ * are ignored. libdragon's surfaces are uncached: no cache maintenance. */
+#define TMEM_BYTES 4096
+/* desktop GL enums libdragon's headers do not define (standard values) */
+#ifndef GL_BGR
+#define GL_BGR                          0x80E0
+#endif
+#ifndef GL_BGRA
+#define GL_BGRA                         0x80E1
+#endif
+#ifndef GL_UNSIGNED_SHORT_5_6_5
+#define GL_UNSIGNED_SHORT_5_6_5         0x8363
+#endif
+#ifndef GL_UNSIGNED_SHORT_1_5_5_5_REV
+#define GL_UNSIGNED_SHORT_1_5_5_5_REV   0x8366
+#endif
+#ifndef GL_UNSIGNED_INT_8_8_8_8_REV
+#define GL_UNSIGNED_INT_8_8_8_8_REV     0x8367
+#endif
+
+typedef struct
+{
+    GLuint    name;
+    surface_t surf;
+    uint16_t  src_w, src_h;       /* the image as the program sees it */
+    uint8_t   used;
+} n64_tex_t;
+
+static n64_tex_t *g_tex;
+static unsigned   g_tex_count, g_tex_cap;
+static GLuint     g_bound_2d;
+
+static n64_tex_t *tex_find(GLuint name, int create)
+{
+    for (unsigned i = 0; i < g_tex_count; i++)
+        if (g_tex[i].used && g_tex[i].name == name)
+            return &g_tex[i];
+    if (!create || !name)
+        return NULL;
+    for (unsigned i = 0; i < g_tex_count; i++)
+        if (!g_tex[i].used)
+        {
+            memset(&g_tex[i], 0, sizeof(g_tex[i]));
+            g_tex[i].name = name;
+            g_tex[i].used = 1;
+            return &g_tex[i];
+        }
+    if (g_tex_count == g_tex_cap)
+    {
+        unsigned cap = g_tex_cap ? g_tex_cap * 2 : 64;
+        n64_tex_t *t = realloc(g_tex, cap * sizeof(*t));
+        if (!t) return NULL;
+        g_tex = t;
+        g_tex_cap = cap;
+    }
+    n64_tex_t *t = &g_tex[g_tex_count++];
+    memset(t, 0, sizeof(*t));
+    t->name = name;
+    t->used = 1;
+    return t;
+}
+
+static void tex_release(n64_tex_t *t)
+{
+    if (t->surf.buffer)
+        surface_free(&t->surf);
+    memset(&t->surf, 0, sizeof(t->surf));
+}
+
+/* one source pixel as 8-bit RGBA; returns 0 for an unknown format */
+static int read_pixel(GLenum format, GLenum type, const uint8_t *row, int x,
+                      uint8_t *rgba)
+{
+    switch (format)
+    {
+    case GL_RGBA:
+        if (type == GL_UNSIGNED_BYTE)
+        {
+            memcpy(rgba, row + 4 * x, 4);
+            return 1;
+        }
+        break;
+    case GL_BGRA:
+        if (type == GL_UNSIGNED_BYTE)
+        {
+            const uint8_t *p = row + 4 * x;
+            rgba[0] = p[2]; rgba[1] = p[1]; rgba[2] = p[0]; rgba[3] = p[3];
+            return 1;
+        }
+        if (type == GL_UNSIGNED_INT_8_8_8_8_REV)
+        {
+            uint32_t v;               /* native order: 0xAARRGGBB */
+            memcpy(&v, row + 4 * x, 4);
+            rgba[0] = v >> 16; rgba[1] = v >> 8; rgba[2] = v; rgba[3] = v >> 24;
+            return 1;
+        }
+        if (type == GL_UNSIGNED_SHORT_1_5_5_5_REV)
+        {
+            uint16_t v;               /* A1R5G5B5 */
+            memcpy(&v, row + 2 * x, 2);
+            rgba[0] = ((v >> 10) & 31) * 255 / 31;
+            rgba[1] = ((v >> 5) & 31) * 255 / 31;
+            rgba[2] = (v & 31) * 255 / 31;
+            rgba[3] = (v & 0x8000) ? 255 : 0;
+            return 1;
+        }
+        break;
+    case GL_RGB:
+        if (type == GL_UNSIGNED_BYTE)
+        {
+            memcpy(rgba, row + 3 * x, 3);
+            rgba[3] = 255;
+            return 1;
+        }
+        if (type == GL_UNSIGNED_SHORT_5_6_5)
+        {
+            uint16_t v;
+            memcpy(&v, row + 2 * x, 2);
+            rgba[0] = (v >> 11) * 255 / 31;
+            rgba[1] = ((v >> 5) & 63) * 255 / 63;
+            rgba[2] = (v & 31) * 255 / 31;
+            rgba[3] = 255;
+            return 1;
+        }
+        break;
+    case GL_BGR:
+        if (type == GL_UNSIGNED_BYTE)
+        {
+            const uint8_t *p = row + 3 * x;
+            rgba[0] = p[2]; rgba[1] = p[1]; rgba[2] = p[0]; rgba[3] = 255;
+            return 1;
+        }
+        break;
+    case GL_RED:              /* font pages: a coverage mask */
+    case GL_ALPHA:
+        if (type == GL_UNSIGNED_BYTE)
+        {
+            rgba[0] = rgba[1] = rgba[2] = 255;
+            rgba[3] = row[x];
+            return 1;
+        }
+        break;
+    case GL_LUMINANCE:
+        if (type == GL_UNSIGNED_BYTE)
+        {
+            rgba[0] = rgba[1] = rgba[2] = row[x];
+            rgba[3] = 255;
+            return 1;
+        }
+        break;
+    }
+    return 0;
+}
+
+static int bytes_per_pixel(GLenum format, GLenum type)
+{
+    if (type == GL_UNSIGNED_INT_8_8_8_8_REV) return 4;
+    if (type == GL_UNSIGNED_SHORT_5_6_5 || type == GL_UNSIGNED_SHORT_1_5_5_5_REV) return 2;
+    switch (format)
+    {
+    case GL_RGBA: case GL_BGRA: return 4;
+    case GL_RGB: case GL_BGR: return 3;
+    default: return 1;
+    }
+}
+
+/* write source rectangle (x, y, w, h) of data into t->surf: each surface
+ * texel the rectangle covers takes the source texel it maps to (nearest) */
+static void tex_store(n64_tex_t *t, int x, int y, int w, int h,
+                      GLenum format, GLenum type, const void *data)
+{
+    const tex_format_t fmt = surface_get_format(&t->surf);
+    const int bpp = bytes_per_pixel(format, type);
+    const int dw = t->surf.width, dh = t->surf.height;
+    const int sw = t->src_w, sh = t->src_h;
+    uint8_t *dst = t->surf.buffer;
+    const int dx0 = x * dw / sw, dy0 = y * dh / sh;
+    const int dx1 = ((x + w) * dw + sw - 1) / sw;
+    const int dy1 = ((y + h) * dh + sh - 1) / sh;
+    for (int dy = dy0; dy < dy1 && dy < dh; dy++)
+    {
+        int syy = (dy * sh + sh / (2 * dh)) / dh - y;   /* texel centre */
+        if (syy < 0) syy = 0;
+        if (syy >= h) syy = h - 1;
+        const uint8_t *row = (const uint8_t*)data + (size_t)syy * w * bpp;
+        for (int dx = dx0; dx < dx1 && dx < dw; dx++)
+        {
+            int sxx = (dx * sw + sw / (2 * dw)) / dw - x;
+            if (sxx < 0) sxx = 0;
+            if (sxx >= w) sxx = w - 1;
+            uint8_t c[4] = { 0, 0, 0, 0 };
+            if (data)
+                read_pixel(format, type, row, sxx, c);
+            if (fmt == FMT_IA8)
+            {
+                const uint8_t i = (c[0] + c[1] + c[2]) / 3;
+                dst[dy * t->surf.stride + dx] = (i & 0xF0) | (c[3] >> 4);
+            }
+            else
+            {
+                const uint16_t v = ((c[0] >> 3) << 11) | ((c[1] >> 3) << 6) |
+                                   ((c[2] >> 3) << 1) | (c[3] >= 128);
+                ((uint16_t*)(dst + dy * t->surf.stride))[dx] = v;
+            }
+        }
+    }
+}
+
+/* the power of two nearest to n (in log terms) */
+static int nearest_pot(int n)
+{
+    int p = 1;
+    while (p * 2 <= n)
+        p *= 2;
+    return (n - p) * 4 >= p * 3 ? p * 2 : p;    /* >= 1.75p: round up */
+}
+
+static void n64_glTexImage2D(GLenum target, GLint level, GLint internalformat,
+                             GLsizei width, GLsizei height, GLint border,
+                             GLenum format, GLenum type, const GLvoid *data)
+{
+    (void)internalformat; (void)border;
+    if (target != GL_TEXTURE_2D || level != 0 || width <= 0 || height <= 0)
+        return;                         /* mip levels: not used */
+    n64_tex_t *t = tex_find(g_bound_2d, 1);
+    if (!t)
+        return;
+    uint8_t probe[4];
+    if (!read_pixel(format, type, (const uint8_t*)"\0\0\0\0", 0, probe))
+    {
+        static int said;
+        if (!said++)
+            debugf("GL: texture format %#lx/%#lx not converted\n",
+                   (unsigned long)format, (unsigned long)type);
+        return;
+    }
+    const int mask = format == GL_RED || format == GL_ALPHA;
+    const tex_format_t fmt = mask ? FMT_IA8 : FMT_RGBA16;
+    const int bytes = mask ? 1 : 2;
+    int dw = nearest_pot(width), dh = nearest_pot(height);
+    while (dw * dh * bytes > TMEM_BYTES)
+    {
+        if (dw >= dh) dw /= 2;
+        else dh /= 2;
+    }
+    tex_release(t);
+    t->surf = surface_alloc(fmt, dw, dh);
+    if (!t->surf.buffer)
+        return;
+    t->src_w = width;
+    t->src_h = height;
+    memset(t->surf.buffer, 0, t->surf.stride * t->surf.height);
+    if (data)
+        tex_store(t, 0, 0, width, height, format, type, data);
+    glSurfaceTexImageN64(GL_TEXTURE_2D, 0, &t->surf, NULL);
+}
+
+static void n64_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
+                                GLsizei w, GLsizei h, GLenum format,
+                                GLenum type, const GLvoid *data)
+{
+    if (target != GL_TEXTURE_2D || level != 0 || !data || w <= 0 || h <= 0)
+        return;
+    n64_tex_t *t = tex_find(g_bound_2d, 0);
+    if (!t || !t->surf.buffer)
+        return;
+    tex_store(t, x, y, w, h, format, type, data);
+    glSurfaceTexImageN64(GL_TEXTURE_2D, 0, &t->surf, NULL);   /* re-upload */
+}
+
+static void n64_glBindTexture(GLenum target, GLuint name)
+{
+    if (target == GL_TEXTURE_2D)
+        g_bound_2d = name;
+    glBindTexture(target, name);
+}
+
+static void n64_glDeleteTextures(GLsizei n, const GLuint *names)
+{
+    glDeleteTextures(n, names);         /* libdragon drops its references */
+    for (GLsizei i = 0; i < n; i++)
+    {
+        n64_tex_t *t = tex_find(names[i], 0);
+        if (t)
+        {
+            tex_release(t);
+            t->used = 0;
+        }
+        if (names[i] == g_bound_2d)
+            g_bound_2d = 0;
+    }
+}
+
+static void n64_glGenerateMipmap(GLenum target) { (void)target; }
+
+static const struct { const char *name; void *fn; } g_gl_wrapped[] =
+{
+    { "glTexImage2D", (void*)n64_glTexImage2D },
+    { "glTexSubImage2D", (void*)n64_glTexSubImage2D },
+    { "glBindTexture", (void*)n64_glBindTexture },
+    { "glDeleteTextures", (void*)n64_glDeleteTextures },
+    { "glGenerateMipmap", (void*)n64_glGenerateMipmap },
+    { "glGenerateMipmapEXT", (void*)n64_glGenerateMipmap },
+};
+
 void *SDL_GL_GetProcAddress(const char *proc)
 {
+    for (size_t i = 0; i < sizeof(g_gl_wrapped) / sizeof(g_gl_wrapped[0]); i++)
+        if (strcmp(g_gl_wrapped[i].name, proc) == 0)
+            return g_gl_wrapped[i].fn;
     for (size_t i = 0; i < sizeof(g_gl_procs) / sizeof(g_gl_procs[0]); i++)
         if (strcmp(g_gl_procs[i].name, proc) == 0)
             return g_gl_procs[i].fn;
+    for (size_t i = 0; i < sizeof(g_gl_unsupported) / sizeof(g_gl_unsupported[0]); i++)
+        if (strcmp(g_gl_unsupported[i].name, proc) == 0)
+            return g_gl_unsupported[i].fn;
     return NULL;
 }
 

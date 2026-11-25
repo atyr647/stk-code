@@ -10,7 +10,8 @@ set -euo pipefail
 ZSRC="$(realpath "$1")"; PREFIX="$(realpath -m "$2")"
 N64_INST="${N64_INST:-/opt/pak-n64}"
 CC="$N64_INST/bin/mips64-elf-gcc"; AR="$N64_INST/bin/mips64-elf-ar"
-CFLAGS="-march=vr4300 -mtune=vr4300 -mabi=o64 -Os -ffunction-sections -fdata-sections -DN64 -DZ_HAVE_UNISTD_H"
+# -mlong-calls: the client pages its code (n64/compat/src/pager.c), zlib with it
+CFLAGS="-march=vr4300 -mtune=vr4300 -mabi=o64 -Os -ffunction-sections -fdata-sections -mlong-calls -DN64 -DZ_HAVE_UNISTD_H"
 B="$PREFIX/build-zlib"; mkdir -p "$B" "$PREFIX/lib" "$PREFIX/include"
 # zlib's CMake renames zconf.h out of the way in-tree; accept either name
 ZCONF="$ZSRC/zconf.h"; [ -f "$ZCONF" ] || ZCONF="$ZSRC/zconf.h.included"

@@ -43,6 +43,19 @@ add_definitions(-DNO_IRR_COMPILE_WITH_BMP_LOADER_ -DNO_IRR_COMPILE_WITH_BMP_WRIT
                 -DNO__IRR_COMPILE_WITH_TAR_ARCHIVE_LOADER_
                 -DNO__IRR_COMPILE_WITH_WAD_ARCHIVE_LOADER_)
 
+# The client does not fit in RAM: its code is paged in from the cartridge
+# (n64/compat/src/pager.c, n64/n64_paged.ld). Paged code runs at 0xC0800000,
+# the resident platform at 0x80000000: calls between them are beyond a jal,
+# so everything is compiled with -mlong-calls (the linked libraries too:
+# n64/build_n64_client_deps.sh, n64/build_libstdcxx_longcalls.sh).
+if(NOT SERVER_ONLY)
+    option(STK_N64_PAGED "Page the client's code in from the cartridge" ON)
+    if(STK_N64_PAGED)
+        add_compile_options(-mlong-calls)
+        add_link_options(-mlong-calls)
+    endif()
+endif()
+
 add_subdirectory(${STK_N64_DIR}/compat ${CMAKE_BINARY_DIR}/n64compat)
 
 set(ZLIB_INCLUDE_DIR ${N64_DEPS_PREFIX}/include CACHE PATH "" FORCE)

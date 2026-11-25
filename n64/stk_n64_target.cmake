@@ -23,6 +23,24 @@ foreach(opt STK_N64_LOG_HEAP STK_N64_PROFILE)
     endif()
 endforeach()
 target_link_libraries(supertuxkart stk_n64_compat)
+if(STK_N64_PAGED AND NOT SERVER_ONLY)
+    # n64/compat/src/pager.c: the paged linker script, the long-calls
+    # libstdc++, and the entry file kept out of LTO (it stays resident)
+    # (the long-calls libstdc++ must come before the toolchain's lib dir,
+    # which holds the stock one)
+    string(REPLACE "${N64_LIBDIR}/n64.ld" "${STK_N64_DIR}/n64_paged.ld"
+           CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    string(REPLACE "-L${N64_LIBDIR}"
+           "-L${N64_DEPS_PREFIX}/lib/longcalls -L${N64_LIBDIR}"
+           CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+    set_property(SOURCE ${STK_N64_DIR}/compat/src/n64_main.cpp APPEND PROPERTY
+        COMPILE_OPTIONS -fno-lto)
+    set_property(TARGET supertuxkart APPEND PROPERTY LINK_DEPENDS
+        ${STK_N64_DIR}/n64_paged.ld)
+    # nothing calls into pager.c (it starts from a constructor): pull it
+    # out of libstk_n64_compat.a explicitly
+    target_link_options(supertuxkart PRIVATE "-Wl,--undefined=stk_n64_pager_faults")
+endif()
 if(NOT SERVER_ONLY)
     # static library order: graphics_engine's occlusion culling uses Bullet,
     # vorbis uses ogg (pkg-config's flags list vorbis last)

@@ -1,0 +1,219 @@
+diff --git a/src/GL/gl.c b/src/GL/gl.c
+index 249eb72..569e69a 100644
+--- a/src/GL/gl.c
++++ b/src/GL/gl.c
+@@ -17,6 +17,8 @@
+ #include <malloc.h>
+ #include "gl_internal.h"
+ 
++int __gl_errors_logged;
++
+ DEFINE_RSP_UCODE(rsp_gl);
+ DEFINE_RSP_UCODE(rsp_gl_pipeline);
+ 
+@@ -399,7 +401,7 @@ void glClear(GLbitfield buf)
+     __rdpq_set_mode_fill();
+ 
+     if (buf & (GL_STENCIL_BUFFER_BIT | GL_ACCUM_BUFFER_BIT)) {
+-        assertf(0, "Only color and depth buffers are supported!");
++        gl_set_error(GL_INVALID_ENUM, "Only color and depth buffers are supported!");
+     }
+ 
+     if (buf & GL_DEPTH_BUFFER_BIT) {
+diff --git a/src/GL/gl_internal.h b/src/GL/gl_internal.h
+index e8b2b74..c2d82eb 100644
+--- a/src/GL/gl_internal.h
++++ b/src/GL/gl_internal.h
+@@ -52,10 +52,28 @@
+     dirty_flag; \
+ })
+ 
++/* An OpenGL error is recorded for glGetError(), as the GL specification
++ * says: programs written for desktop GL probe for features this way (e.g.
++ * glGetIntegerv(GL_MAJOR_VERSION) on a GL 1.x context). The same goes for
++ * valid parameters this implementation does not support (two-sided
++ * lighting, some blend factors, ...): they are reported as GL_INVALID_ENUM
++ * instead of stopping the program. The first errors are logged;
++ * GL_ASSERT_ERRORS makes them assertions again. */
++#ifdef GL_ASSERT_ERRORS
+ #define gl_set_error(error, message, ...)  ({ \
+     state->current_error = error; \
+     assertf(error == GL_NO_ERROR, "%s: " message, #error, ##__VA_ARGS__); \
+ })
++#else
++extern int __gl_errors_logged;
++#define gl_set_error(error, message, ...)  ({ \
++    state->current_error = error; \
++    if (error != GL_NO_ERROR && __gl_errors_logged < 50) { \
++        __gl_errors_logged++; \
++        debugf("GL: %s: " message "\n", #error, ##__VA_ARGS__); \
++    } \
++})
++#endif
+ 
+ #define gl_ensure_no_begin_end() ({ \
+     assertf(state, "gl_init() not called"); \
+diff --git a/src/GL/lighting.c b/src/GL/lighting.c
+index 822c777..ff7d081 100644
+--- a/src/GL/lighting.c
++++ b/src/GL/lighting.c
+@@ -260,7 +260,7 @@ bool gl_validate_material_face(GLenum face)
+         return true;
+     case GL_FRONT:
+     case GL_BACK:
+-        assertf(0, "Separate materials for front and back faces are not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Separate materials for front and back faces are not supported!");
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid material face", face);
+         return false;
+@@ -753,7 +753,7 @@ void glLightModeli(GLenum pname, GLint param)
+         gl_set_light_model_local_viewer(param != 0);
+         break;
+     case GL_LIGHT_MODEL_TWO_SIDE:
+-        assertf(0, "Two sided lighting is not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Two sided lighting is not supported!");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid parameter name for this function", pname);
+@@ -783,7 +783,7 @@ void glLightModeliv(GLenum pname, const GLint *params)
+         gl_set_light_model_local_viewer(params[0] != 0);
+         break;
+     case GL_LIGHT_MODEL_TWO_SIDE:
+-        assertf(0, "Two sided lighting is not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Two sided lighting is not supported!");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid parameter name for this function", pname);
+@@ -803,7 +803,7 @@ void glLightModelfv(GLenum pname, const GLfloat *params)
+         gl_set_light_model_local_viewer(params[0] != 0);
+         break;
+     case GL_LIGHT_MODEL_TWO_SIDE:
+-        assertf(0, "Two sided lighting is not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Two sided lighting is not supported!");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid parameter name for this function", pname);
+diff --git a/src/GL/primitive.c b/src/GL/primitive.c
+index 3c689a9..18db99c 100644
+--- a/src/GL/primitive.c
++++ b/src/GL/primitive.c
+@@ -798,7 +798,7 @@ void glPolygonMode(GLenum face, GLenum mode)
+     switch (face) {
+     case GL_FRONT:
+     case GL_BACK:
+-        assertf(0, "Separate polygon modes for front and back faces are not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Separate polygon modes for front and back faces are not supported!");
+         break;
+     case GL_FRONT_AND_BACK:
+         break;
+diff --git a/src/GL/query.c b/src/GL/query.c
+index e1d6be2..ef928cb 100644
+--- a/src/GL/query.c
++++ b/src/GL/query.c
+@@ -462,7 +462,7 @@ static bool gl_query_get_value_source(GLenum value, const void **src, uint32_t *
+     case GL_LIGHT5:
+     case GL_LIGHT6:
+     case GL_LIGHT7:
+-        assertf(0, "querying %#04lx is not supported", value);
++        gl_set_error(GL_INVALID_ENUM, "querying %#04lx is not supported", value);
+         return false;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid value name", value);
+@@ -578,7 +578,7 @@ GLboolean glIsEnabled(GLenum value)
+     case GL_TEXTURE_GEN_T:
+     case GL_EDGE_FLAG_ARRAY:
+     case GL_INDEX_ARRAY:
+-        assertf(0, "querying %#04lx is not supported", value);
++        gl_set_error(GL_INVALID_ENUM, "querying %#04lx is not supported", value);
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid value name", value);
+@@ -608,7 +608,7 @@ void glGetPointerv(GLenum pname, GLvoid **params)
+     case GL_INDEX_ARRAY_POINTER:
+     case GL_FEEDBACK_BUFFER_POINTER:
+     case GL_SELECTION_BUFFER_POINTER:
+-        assertf(0, "querying %#04lx is not supported", pname);
++        gl_set_error(GL_INVALID_ENUM, "querying %#04lx is not supported", pname);
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid pointer name", pname);
+diff --git a/src/GL/rendermode.c b/src/GL/rendermode.c
+index b4b0f4b..d7f2d4a 100644
+--- a/src/GL/rendermode.c
++++ b/src/GL/rendermode.c
+@@ -252,7 +252,7 @@ void glBlendFunc(GLenum src, GLenum dst)
+     case GL_ONE_MINUS_DST_COLOR: 
+     case GL_ONE_MINUS_DST_ALPHA:
+     case GL_SRC_ALPHA_SATURATE:
+-        assertf(0, "Unsupported blend source factor");
++        gl_set_error(GL_INVALID_ENUM, "Unsupported blend source factor");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid blend source factor", src);
+@@ -269,7 +269,7 @@ void glBlendFunc(GLenum src, GLenum dst)
+     case GL_SRC_COLOR:
+     case GL_ONE_MINUS_DST_ALPHA:
+     case GL_ONE_MINUS_SRC_COLOR:
+-        assertf(0, "Unsupported blend destination factor");
++        gl_set_error(GL_INVALID_ENUM, "Unsupported blend destination factor");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid blend destination factor", dst);
+@@ -302,7 +302,7 @@ void glDepthFunc(GLenum func)
+     case GL_GREATER:
+     case GL_NOTEQUAL:
+     case GL_GEQUAL:
+-        assertf(0, "Depth func not supported: %#04lx", func);
++        gl_set_error(GL_INVALID_ENUM, "Depth func not supported: %#04lx", func);
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid depth function", func);
+@@ -334,7 +334,7 @@ void glAlphaFunc(GLenum func, GLclampf ref)
+     case GL_LESS:
+     case GL_NOTEQUAL:
+     case GL_GEQUAL:
+-        assertf(0, "Alpha func not supported: %#04lx", func);
++        gl_set_error(GL_INVALID_ENUM, "Alpha func not supported: %#04lx", func);
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid alpha function", func);
+@@ -363,7 +363,7 @@ void glTexEnvi(GLenum target, GLenum pname, GLint param)
+         break;
+     case GL_DECAL:
+     case GL_BLEND:
+-        assertf(0, "Unsupported Tex Env mode!");
++        gl_set_error(GL_INVALID_ENUM, "Unsupported Tex Env mode!");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid tex env mode", param);
+@@ -388,7 +388,7 @@ void glTexEnviv(GLenum target, GLenum pname, const GLint *params)
+ 
+     switch (pname) {
+     case GL_TEXTURE_ENV_COLOR:
+-        assertf(0, "Tex env color is not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Tex env color is not supported!");
+         break;
+     default:
+         glTexEnvi(target, pname, params[0]);
+@@ -407,7 +407,7 @@ void glTexEnvfv(GLenum target, GLenum pname, const GLfloat *params)
+ 
+     switch (pname) {
+     case GL_TEXTURE_ENV_COLOR:
+-        assertf(0, "Tex env color is not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Tex env color is not supported!");
+         break;
+     default:
+         glTexEnvf(target, pname, params[0]);
+diff --git a/src/GL/texture.c b/src/GL/texture.c
+index 8b7d9f4..3003d07 100644
+--- a/src/GL/texture.c
++++ b/src/GL/texture.c
+@@ -530,7 +530,7 @@ void glTexParameteriv(GLenum target, GLenum pname, const GLint *params)
+         gl_texture_set_mag_filter(offset, params[0]);
+         break;
+     case GL_TEXTURE_BORDER_COLOR:
+-        assertf(0, "Texture border color is not supported!");
++        gl_set_error(GL_INVALID_ENUM, "Texture border color is not supported!");
+         break;
+     case GL_TEXTURE_PRIORITY:
+         // Ignored

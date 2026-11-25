@@ -93,7 +93,13 @@ Profiler::Profiler()
     // When initializing profile class during static initialization
     // UserConfigParams::m_max_fps may not be properly initialized with default
     // value, so we use hard-coded default value
+#ifdef STK_LOW_MEMORY
+    // 10 s of history: the GPU timer table alone is ~80 bytes per frame
+    // (1000 s would be 4.8 MB)
+    m_max_frames          = 60 * 10;
+#else
     m_max_frames          = 60 * 1000;
+#endif
     m_current_frame       = 0;
     m_has_wrapped_around  = false;
     m_drawing             = true;

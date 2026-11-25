@@ -70,7 +70,7 @@ if [ "${STK_N64_SERVER:-0}" = 1 ]; then
     # server-only build never reads from: keep them, empty.
     for d in gui/icons gui/screens gui/dialogs replay shaders ttf po music sfx; do  # keep dirs
         mkdir -p "$WORK/fs/data/$d"
-        : > "$WORK/fs/data/$d/.keep"
+        : > "$WORK/fs/data/$d/n64_keep.txt"
     done
     # GUIEngine::Skin only checks that the configured fonts exist
     # (getAssetChecked); empty stand-ins keep 16 MB of fonts off the cartridge.
@@ -79,6 +79,35 @@ fi
 if [ "${STK_N64_SERVER:-0}" = 1 ]; then
     find "$WORK/fs/data" -type f \( -iname '*.png' -o -iname '*.jpg' \
          -o -iname '*.jpeg' \) -exec truncate -s 0 {} +
+fi
+if [ "${STK_N64_SERVER:-0}" != 1 ]; then
+    # Client ROMs. Translations (16 MB of .po for 71 languages) only with
+    # STK_N64_PO=1: the cartridge budget is not settled yet; STK needs the
+    # directory and runs in English without it. (Placeholder files are not
+    # dot-files: mkdfs leaves those out, and an empty directory with them.)
+    mkdir -p "$WORK/fs/data/po"
+    if [ "${STK_N64_PO:-0}" = 1 ]; then
+        rsync -a "$STK/data/po/" "$WORK/fs/data/po/"
+    else
+        : > "$WORK/fs/data/po/n64_keep.txt"
+    fi
+    # Client ROMs. Replays are benchmark ghosts only (15 MB): left out.
+    rm -rf "$WORK/fs/data/replay"; mkdir -p "$WORK/fs/data/replay"
+    : > "$WORK/fs/data/replay/n64_keep.txt"
+    # STK reads a font file whole into RAM: the emoji (10 MB) and CJK
+    # (4.6 MB) fonts cannot be loaded on the N64 at all. Empty stand-ins
+    # satisfy the skin's existence checks; Chinese/Japanese/emoji text is
+    # not displayable.
+    for f in NotoColorEmoji.ttf wqy-microhei.ttf; do
+        [ -f "$WORK/fs/data/ttf/$f" ] && : > "$WORK/fs/data/ttf/$f"
+    done
+    # The N64 audio back-end is not written yet (n64/compat/src/sdl_n64.c:
+    # no audio device), and STK only opens .ogg files to play them: empty
+    # stand-ins keep 80 MB of music off the cartridge until then.
+    # STK_N64_OGG=1 keeps them.
+    if [ "${STK_N64_OGG:-0}" != 1 ]; then
+        find "$WORK/fs/data" -type f -iname '*.ogg' -exec truncate -s 0 {} +
+    fi
 fi
 [ -n "$ARGS" ] && cp "$ARGS" "$WORK/fs/data/n64_args.txt"
 
@@ -89,9 +118,18 @@ cp "$ELF" "$WORK/stk.elf"
 "$BIN/n64sym" --all "$WORK/stk.elf" "$WORK/stk.sym"
 cp "$WORK/stk.elf" "$WORK/stk.stripped"
 "$BIN/mips64-elf-strip" -s "$WORK/stk.stripped"
+# Paged code (client builds, n64/compat/src/pager.c): the .paged section is
+# its own file on the cartridge (stk.paged), read in 32 KB blocks at run
+# time; the image IPL3 loads at boot leaves it out
+PAGED=""
+if "$BIN/mips64-elf-objdump" -h "$WORK/stk.stripped" | grep -q ' \.paged '; then
+    "$BIN/mips64-elf-objcopy" -O binary -j .paged "$WORK/stk.stripped" "$WORK/stk.paged"
+    "$BIN/mips64-elf-objcopy" -R .paged "$WORK/stk.stripped"
+    PAGED="$WORK/stk.paged"
+fi
 "$BIN/n64elfcompress" -o "$WORK" -c "${STK_N64_ELFCOMPRESS:-1}" "$WORK/stk.stripped"
 "$BIN/n64tool" --toc --title "SuperTuxKart" --output "$OUT" \
-    --align 256 "$WORK/stk.stripped" "$WORK/stk.sym" "$WORK/data.dfs"
+    --align 256 "$WORK/stk.stripped" "$WORK/stk.sym" "$WORK/data.dfs" $PAGED
 
 printf 'ROM %s: %s (DFS %s, %s files)\n' "$OUT" \
     "$(du -h "$OUT" | cut -f1)" "$(du -h "$WORK/data.dfs" | cut -f1)" \

@@ -19,6 +19,7 @@ set_source_files_properties(${LIBSTDCXX_THREAD_SOURCES} PROPERTIES
 # fpu_emu.c writes $f20-$f31 directly; it must not use them itself
 set_source_files_properties(src/fpu_emu.c PROPERTIES COMPILE_FLAGS
     "-DSTK_N64_FPU_EMU_FIXED_REGS -ffixed-$f20 -ffixed-$f21 -ffixed-$f22 -ffixed-$f23 -ffixed-$f24 -ffixed-$f25 -ffixed-$f26 -ffixed-$f27 -ffixed-$f28 -ffixed-$f29 -ffixed-$f30 -ffixed-$f31")
+enable_language(ASM)   # src/pager_refill.S
 add_library(stk_n64_compat STATIC
     src/gthr_libdragon.c
     src/fpu_emu.c
@@ -30,6 +31,18 @@ add_library(stk_n64_compat STATIC
     ${LIBSTDCXX_THREAD_SOURCES})
 add_library(stk_n64_curl STATIC src/curl_stub.c)
 add_library(stk_n64_mbedcrypto STATIC src/mbedtls_stub.c)
+if(STK_N64_PAGED)
+    # resident code (n64_paged.ld keeps libstk_n64_compat.a out of the paged
+    # section): it must not be merged into the LTO partitions of paged code
+    target_sources(stk_n64_compat PRIVATE src/pager.c src/pager_refill.S)
+    set_target_properties(stk_n64_compat PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
+    target_compile_options(stk_n64_compat PRIVATE -fno-lto)
+    # resident and calling only resident code. Compiled without LTO, GCC 16
+    # fails on its final indirect tail call (prev_handler: "unable to
+    # generate reloads" for sibcall_internal): no sibling calls there
+    set_property(SOURCE src/fpu_emu.c APPEND PROPERTY COMPILE_OPTIONS
+                 -mno-long-calls -fno-optimize-sibling-calls)
+endif()
 if(NOT SERVER_ONLY)
     add_library(stk_n64_sdl STATIC src/sdl_n64.c)
     target_include_directories(stk_n64_sdl PRIVATE ${N64_DEPS_PREFIX}/include/SDL2)

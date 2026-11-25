@@ -155,6 +155,22 @@ void FontWithFace::loadGlyphInfo(wchar_t c)
 }   // loadGlyphInfo
 
 // ----------------------------------------------------------------------------
+unsigned int FontWithFace::glyphPageSize() const
+{
+    unsigned int size = getGlyphPageSize();
+#ifndef SERVER_ONLY
+    if (!GUIEngine::isNoGraphics() && irr_driver->getVideoDriver())
+    {
+        const core::dimension2du max =
+            irr_driver->getVideoDriver()->getMaxTextureSize();
+        if (max.Width > 0 && max.Width < size)
+            size = max.Width;
+    }
+#endif
+    return size;
+}   // glyphPageSize
+
+// ----------------------------------------------------------------------------
 /** Create a new glyph page by filling it with transparent content.
  */
 void FontWithFace::createNewGlyphPage()
@@ -167,7 +183,7 @@ void FontWithFace::createNewGlyphPage()
     m_used_height = 0;
     video::ITexture* font_texture = GE::createFontTexture(typeid(*this).name() +
         StringUtils::toString(m_spritebank->getTextureCount()),
-        getGlyphPageSize(), !useColorGlyphPage());
+        glyphPageSize(), !useColorGlyphPage());
     m_spritebank->addTexture(STKTexManager::getInstance()->addTexture(
         font_texture));
 #endif
@@ -226,17 +242,17 @@ void FontWithFace::insertGlyph(unsigned font_number, unsigned glyph_index)
         cur_glyph_height = (unsigned)(bits->rows * scale_ratio);
     }
     core::dimension2du texture_size(cur_glyph_width + 1, cur_glyph_height + 1);
-    if ((m_used_width + texture_size.Width > getGlyphPageSize() &&
+    if ((m_used_width + texture_size.Width > glyphPageSize() &&
         m_used_height + m_current_height + texture_size.Height >
-        getGlyphPageSize())                                     ||
-        m_used_height + texture_size.Height > getGlyphPageSize())
+        glyphPageSize())                                        ||
+        m_used_height + texture_size.Height > glyphPageSize())
     {
         // Add a new glyph page if current one is full
         createNewGlyphPage();
     }
 
     // Determine the linebreak location
-    if (m_used_width + texture_size.Width > getGlyphPageSize())
+    if (m_used_width + texture_size.Width > glyphPageSize())
     {
         m_used_width  = 0;
         m_used_height += m_current_height;

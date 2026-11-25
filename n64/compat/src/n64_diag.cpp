@@ -59,6 +59,39 @@ static void on_terminate()
     halt("std::terminate", 0);
 }
 
+// Return addresses on the current stack, resident or paged, for offline
+// symbolization (n64/tools: addr2line on the ELF). libdragon's backtrace
+// stops at paged code, whose addresses it does not consider code. Thread
+// context only: reading paged code may take a TLB refill.
+extern "C" char __text_start[], __text_end[];
+// weak: only the paged linker script (client builds) defines these
+extern "C" char __paged_start[] __attribute__((weak));
+extern "C" char __paged_end[] __attribute__((weak));
+static void log_stack_calls()
+{
+    uint32_t *sp;
+    asm volatile("move %0, $sp" : "=r"(sp));
+    debugf("[n64] calls on the stack:");
+    int n = 0;
+    for (int i = 0; i < 1024 && n < 40; i++)
+    {
+        const uint32_t a = sp[i];
+        const bool resident = a >= (uint32_t)__text_start + 8 &&
+                              a < (uint32_t)__text_end;
+        const bool paged = a >= (uint32_t)__paged_start + 8 &&
+                           a < (uint32_t)__paged_end;
+        if ((!resident && !paged) || (a & 3))
+            continue;
+        const uint32_t call = *(const uint32_t*)(a - 8);
+        if ((call >> 26) == 3 || ((call >> 26) == 0 && (call & 63) == 9))
+        {
+            debugf(" %08lx", (unsigned long)a);
+            n++;
+        }
+    }
+    debugf("\n");
+}
+
 // Out of memory: say how much was asked for, how full the heap is, and
 // who asked, before std::bad_alloc unwinds all of that away.
 static void on_out_of_memory()
@@ -72,6 +105,7 @@ static void on_out_of_memory()
         debugf("[n64] out of memory: heap %d KiB used of %d KiB (%d free)\n",
                hs.used / 1024, hs.total / 1024, hs.free / 1024);
         debug_backtrace();
+        log_stack_calls();
     }
     std::set_new_handler(nullptr);
     throw std::bad_alloc();
