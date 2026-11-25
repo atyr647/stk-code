@@ -400,6 +400,10 @@ void MainLoop::updateRace(int ticks, bool fast_forward)
  *      user input).
  *    - Calls Irrlicht's `endScene()`
  */
+#ifdef STK_N64_LOG_HEAP
+extern "C" uint32_t stk_n64_pager_faults(void);   // n64/compat/src/pager.c
+#endif
+
 void MainLoop::run()
 {
     m_curr_time = std::chrono::steady_clock::now();
@@ -422,6 +426,24 @@ void MainLoop::run()
 
     while (!m_abort)
     {
+#ifdef STK_N64_LOG_HEAP
+        {   // a heartbeat: frames per 10 s, so a stall shows in the log
+            static int frames = 0;
+            static auto last = std::chrono::steady_clock::now();
+            frames++;
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last >= std::chrono::seconds(10))
+            {
+                static uint32_t faults = 0;
+                const uint32_t f = stk_n64_pager_faults();
+                Log::info("MainLoop", "%d frames in 10 s, %u page faults",
+                          frames, (unsigned)(f - faults));
+                faults = f;
+                frames = 0;
+                last = now;
+            }
+        }
+#endif
 #ifdef __SWITCH__
       // This feeds us messages (like when the Switch sleeps or requests an exit)
       m_abort = !appletMainLoop();

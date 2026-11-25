@@ -415,8 +415,17 @@ void FontWithFace::dumpGlyphPage()
  */
 void FontWithFace::setDPI()
 {
-    float width_factor  = irr_driver->getActualScreenSize().Width  / 1280.0f;
-    float height_factor = irr_driver->getActualScreenSize().Height / 720.0f;
+    float screen_width  = (float)irr_driver->getActualScreenSize().Width;
+    float screen_height = (float)irr_driver->getActualScreenSize().Height;
+#ifdef N64
+    // The console shows 320x240, where text sized for the screen would be 5
+    // pixels high and unreadable: size it as on 640x480, the smallest screen
+    // STK's menus are made for (see main.cpp).
+    screen_width  = std::max(screen_width,  640.0f);
+    screen_height = std::max(screen_height, 480.0f);
+#endif
+    float width_factor  = screen_width  / 1280.0f;
+    float height_factor = screen_height / 720.0f;
     float min_factor = std::min(width_factor, height_factor);
     float base_factor = width_factor * width_factor * width_factor
                       * height_factor * height_factor * height_factor

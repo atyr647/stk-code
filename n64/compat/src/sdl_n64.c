@@ -440,10 +440,17 @@ static n64_tex_t *tex_find(GLuint name, int create)
     return t;
 }
 
+/* textures in RDRAM, for the heap log (n64_main.cpp) */
+unsigned stk_n64_tex_bytes, stk_n64_tex_count;
+
 static void tex_release(n64_tex_t *t)
 {
     if (t->surf.buffer)
+    {
+        stk_n64_tex_bytes -= t->surf.stride * t->surf.height;
+        stk_n64_tex_count--;
         surface_free(&t->surf);
+    }
     memset(&t->surf, 0, sizeof(t->surf));
 }
 
@@ -627,6 +634,8 @@ static void n64_glTexImage2D(GLenum target, GLint level, GLint internalformat,
     t->surf = surface_alloc(fmt, dw, dh);
     if (!t->surf.buffer)
         return;
+    stk_n64_tex_bytes += t->surf.stride * t->surf.height;
+    stk_n64_tex_count++;
     t->src_w = width;
     t->src_h = height;
     memset(t->surf.buffer, 0, t->surf.stride * t->surf.height);
@@ -917,6 +926,10 @@ static void poll_controllers(void)
         for (int b = 0; b < N64_BUTTONS; b++)
         {
             if (now_b[b] == old_b[b]) continue;
+#ifdef STK_N64_LOG_HEAP
+            debugf("[n64] controller %d button %d %s\n", p, b,
+                   now_b[b] ? "down" : "up");
+#endif
             memset(&e, 0, sizeof(e));
             e.type = now_b[b] ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
             e.jbutton.which = p;

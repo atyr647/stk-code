@@ -58,6 +58,8 @@ static void print_heap(const char *when)
 }
 
 #if !defined(STK_N64_CONSOLE) && !defined(STK_N64_SCREEN_LOG)
+// textures in RDRAM: counted by sdl_n64.c in a client, none in a server
+extern "C" { __attribute__((weak)) unsigned stk_n64_tex_bytes, stk_n64_tex_count; }
 static int write_debug(char *data, unsigned int len)
 {
 #ifdef STK_N64_LOG_HEAP
@@ -76,7 +78,9 @@ static int write_debug(char *data, unsigned int len)
                 (std::chrono::duration_cast<std::chrono::milliseconds>(
                      std::chrono::steady_clock::now().time_since_epoch())
                      .count() / 100);
-            debugf("[%4d K %4lu.%lu s] ", hs.used / 1024, ds / 10, ds % 10);
+            debugf("[%4d K tex %3u K/%3u %4lu.%lu s] ", hs.used / 1024,
+                   stk_n64_tex_bytes / 1024, stk_n64_tex_count,
+                   ds / 10, ds % 10);
             line_start = false;
         }
         if (data[i] == '\n')

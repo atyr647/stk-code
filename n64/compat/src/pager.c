@@ -8,8 +8,8 @@
  * PAGED_BASE, and n64/make_rom.sh stores that section as its own file on the
  * cartridge (stk.paged) instead of loading it at boot.
  *
- *   - Each 32 KB block of that code is one TLB entry: an even/odd pair of
- *     16 KB pages, backed by one 32 KB frame of a fixed pool.
+ *   - Each block of that code (8 KB, pager.h) is one TLB entry: an
+ *     even/odd pair of pages, backed by one frame of a fixed pool.
  *   - A TLB refill for a block already in a frame is handled in the refill
  *     vector itself (pager_refill.S): a table lookup and tlbwr.
  *   - Otherwise libdragon's exception path calls pager_exception(), which
@@ -40,16 +40,13 @@
 #include <malloc.h>         /* memalign */
 #include <string.h>
 
-#define PAGED_BASE      0xC0800000u
-#define BLOCK_SHIFT     15                  /* 32 KB: two 16 KB pages */
-#define BLOCK_SIZE      (1u << BLOCK_SHIFT)
-#define PAGEMASK_16K    0x00006000u
+#include "pager.h"
 #define ENTRYLO_FLAGS   ((3u << 3) | C0_ENTRYLO_VALID | C0_ENTRYLO_GLOBAL)
 #define TLB_ENTRIES     32
 #define PI_CLEAR_INTERRUPT 0x02    /* PI_STATUS write: acknowledge (dma.c) */
 
 #ifndef STK_N64_PAGER_FRAMES
-#define STK_N64_PAGER_FRAMES 48             /* 1.5 MB */
+#define STK_N64_PAGER_FRAMES (1536 * 1024 / BLOCK_SIZE)     /* 1.5 MB */
 #endif
 
 extern char __paged_start[], __paged_end[];   /* n64_paged.ld */
@@ -91,12 +88,13 @@ static inline void set_entrylo(uint32_t lo0, uint32_t lo1)
  * PAGED_BASE, which nothing uses, one VPN2 per TLB index */
 static uint64_t dummy_entryhi(int index)
 {
+    /* (PAGED_BASE - 0xC0000000 = 8 MB: room for 32 blocks of any size) */
     return (uint64_t)(int64_t)(int32_t)(0xC0000000u + (uint32_t)index * BLOCK_SIZE);
 }
 
 static void tlb_init(void)
 {
-    asm volatile("mtc0 %0, $5; mtc0 $0, $6; nop; nop" :: "r"(PAGEMASK_16K));
+    asm volatile("mtc0 %0, $5; mtc0 $0, $6; nop; nop" :: "r"(PAGER_PAGEMASK));
     for (int i = 0; i < TLB_ENTRIES; i++)
     {
         set_entryhi(dummy_entryhi(i));
@@ -171,7 +169,8 @@ static void pager_exception(exception_t *ex)
             if (!__pager_table[block])
                 load_block(block);
             set_entryhi((uint64_t)(int64_t)(int32_t)(PAGED_BASE + block * BLOCK_SIZE));
-            set_entrylo(__pager_table[block], __pager_table[block] + 256);
+            set_entrylo(__pager_table[block],
+                        __pager_table[block] + PAGER_ENTRYLO_STEP);
             tlb_write_random();
             return;
         }
@@ -252,7 +251,7 @@ static void pager_init(void)
     __pager_nblocks = (linked + BLOCK_SIZE - 1) >> BLOCK_SHIFT;
     __pager_table = calloc(__pager_nblocks, sizeof(uint32_t));
     g_nframes = STK_N64_PAGER_FRAMES;
-    g_frames = memalign(16384, g_nframes * BLOCK_SIZE);
+    g_frames = memalign(1 << PAGER_PAGE_SHIFT, g_nframes * BLOCK_SIZE);
     g_frame_block = malloc(g_nframes * sizeof(int32_t));
     assertf(__pager_table && g_frames && g_frame_block, "pager: out of memory");
     for (uint32_t f = 0; f < g_nframes; f++)

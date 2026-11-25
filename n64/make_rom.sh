@@ -101,6 +101,12 @@ if [ "${STK_N64_SERVER:-0}" != 1 ]; then
     for f in NotoColorEmoji.ttf wqy-microhei.ttf; do
         [ -f "$WORK/fs/data/ttf/$f" ] && : > "$WORK/fs/data/ttf/$f"
     done
+    # Without translations (STK_N64_PO, above) all text is in Latin script:
+    # the fallback fonts for other scripts (870 KB, also read whole) would
+    # only take RAM. Cantarell (text) and SigmarOne (digits) stay.
+    if [ "${STK_N64_PO:-0}" != 1 ]; then
+        for f in "$WORK/fs/data/ttf/Noto"*; do : > "$f"; done
+    fi
     # The N64 audio back-end is not written yet (n64/compat/src/sdl_n64.c:
     # no audio device), and STK only opens .ogg files to play them: empty
     # stand-ins keep 80 MB of music off the cartridge until then.

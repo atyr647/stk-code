@@ -586,8 +586,15 @@ namespace UserConfigParams
             "A parameter in range [0.5, 1.5] that determines the scale of the "
             "multitouch interface."));
 
+#ifdef N64
+    // no keyboard on the console: text is typed with the controller
+    #define STK_SCREEN_KEYBOARD_DEFAULT 1
+#else
+    #define STK_SCREEN_KEYBOARD_DEFAULT 0
+#endif
     PARAM_PREFIX IntUserConfigParam         m_screen_keyboard
-            PARAM_DEFAULT( IntUserConfigParam(0, "screen_keyboard_status",
+            PARAM_DEFAULT( IntUserConfigParam(STK_SCREEN_KEYBOARD_DEFAULT,
+            "screen_keyboard_status",
             &m_multitouch_group,
             "STK screen keyboard status: 0 = disabled, 1 = enabled") );
 

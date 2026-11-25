@@ -4,7 +4,9 @@
  *     n64/compat, the platform's entry and diagnostics files, and the
  *     libstdc++ exception support libdragon's crash reporting calls;
  *   - every other code input goes to .paged, linked at 0xC0800000 (TLB
- *     mapped) and stored on the cartridge as stk.paged by n64/make_rom.sh.
+ *     mapped) and stored on the cartridge as stk.paged by n64/make_rom.sh,
+ *     with its constants (.rodata) and C++ exception tables: read-only
+ *     data pages in the same way, through the TLB.
  * Everything else is unchanged from n64.ld.
  */
 /* ========================================================================
@@ -69,15 +71,25 @@ SECTIONS {
         __EH_FRAME_BEGIN__ = .; /* Define symbol for accessing eh_frame section */
         KEEP (*(.eh_frame)) 
     }
-   .gcc_except_table : { *(.gcc_except_table*) } 
    .jcr : { KEEP (*(.jcr)) } 
 
+    /* constants of the resident code only: the rest are paged with their
+       code (below). What runs with EXL set must not touch paged memory. */
     .rodata : {
-        *(.rdata)
-        *(.rodata)
-        *(.rodata.*)
+        *libdragon.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libdragonsys.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libc.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libm.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libg.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libgcc.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libstk_n64_compat.a:*(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *n64_main.cpp.obj(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *n64_diag.cpp.obj(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *crt*.o(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libstdc++.a:eh_*.o(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libstdc++.a:cp-demangle.o(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *libstdc++.a:vterminate.o(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
         KEEP(*(keep.rodata.*))
-        *(.gnu.linkonce.r.*)
         . = ALIGN(4);
         __tdata_align = .;
         LONG (ALIGNOF(.tdata));
@@ -218,6 +230,12 @@ SECTIONS {
     .paged 0xC0800000 : {
         __paged_start = .;
         *(.text .text.* .gnu.linkonce.t.*)
+        /* read-only data of paged code: constants, and the C++ exception
+           tables, which the (resident) personality routine reads while an
+           exception unwinds, in normal context */
+        . = ALIGN(16);
+        *(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
+        *(.gcc_except_table*)
         . = ALIGN(16);
         __paged_end = .;
     } :paged

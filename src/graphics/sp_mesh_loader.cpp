@@ -760,6 +760,21 @@ void SPMeshLoader::createAnimationData(irr::io::IReadFile* spm)
 }   // createAnimationData
 
 // ----------------------------------------------------------------------------
+namespace
+{
+template<typename Key, typename Value>
+void addKey(core::array<Key>& keys, const Key& key, Value Key::*value)
+{
+    const u32 n = keys.size();
+    if (n >= 2 && keys[n - 2].*value == keys[n - 1].*value &&
+        keys[n - 1].*value == key.*value)
+        keys[n - 1] = key;
+    else
+        keys.push_back(key);
+}   // addKey
+}
+
+// ----------------------------------------------------------------------------
 void SPMeshLoader::convertIrrlicht()
 {
 #if defined(SERVER_ONLY) && defined(STK_LOW_MEMORY)
@@ -823,12 +838,29 @@ void SPMeshLoader::convertIrrlicht()
                     .m_frame_pose_matrices[k].second[j].m_rot;
                 core::vector3df scl = m_all_armatures[i]
                     .m_frame_pose_matrices[k].second[j].m_scale;
-                joints[total_joints + j]->PositionKeys.push_back({frame, pos});
-                joints[total_joints + j]->RotationKeys.push_back({frame,
-                    // Reverse for broken irrlicht quaternion
-                    core::quaternion(q.X, q.Y, q.Z, -q.W)});
-                joints[total_joints + j]->ScaleKeys.push_back({frame, scl});
+                // Reverse for broken irrlicht quaternion
+                const core::quaternion rot(q.X, q.Y, q.Z, -q.W);
+                // A key equal to the two before it makes the middle one
+                // redundant: CSkinnedMesh::finalize() removes those, which
+                // is done here as the keys are added, so that a kart's
+                // hundreds of frames of mostly still joints never take
+                // their full size at once (megabytes for one kart).
+                addKey(joints[total_joints + j]->PositionKeys,
+                    scene::ISkinnedMesh::SPositionKey{frame, pos},
+                    &scene::ISkinnedMesh::SPositionKey::position);
+                addKey(joints[total_joints + j]->RotationKeys,
+                    scene::ISkinnedMesh::SRotationKey{frame, rot},
+                    &scene::ISkinnedMesh::SRotationKey::rotation);
+                addKey(joints[total_joints + j]->ScaleKeys,
+                    scene::ISkinnedMesh::SScaleKey{frame, scl},
+                    &scene::ISkinnedMesh::SScaleKey::scale);
             }
+            joints[total_joints + j]->PositionKeys.reallocate(
+                joints[total_joints + j]->PositionKeys.size());
+            joints[total_joints + j]->RotationKeys.reallocate(
+                joints[total_joints + j]->RotationKeys.size());
+            joints[total_joints + j]->ScaleKeys.reallocate(
+                joints[total_joints + j]->ScaleKeys.size());
         }
         total_joints += (unsigned)m_all_armatures[i].m_joint_names.size();
         used_joints += m_all_armatures[i].m_joint_used;

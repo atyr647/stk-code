@@ -2114,6 +2114,13 @@ void initRest()
 //=============================================================================
 void askForInternetPermission()
 {
+#ifdef N64
+    // The console has no network (n64/compat/src/net_stub.c): there is
+    // nothing to ask permission for.
+    UserConfigParams::m_internet_status =
+        Online::RequestManager::IPERM_NOT_ALLOWED;
+    return;
+#endif
     if (UserConfigParams::m_internet_status !=
         Online::RequestManager::IPERM_NOT_ASKED)
         return;
@@ -2464,7 +2471,13 @@ int main(int argc, char *argv[])
         {
             // Some Android devices have only 320x240 and height >= 480 is bare
             // minimum to make the GUI working as expected.
+#ifdef N64
+            // 320x240 is the console's screen; fonts are sized for it
+            // (FontWithFace::setDPI)
+            if (false)
+#else
             if (irr_driver->getActualScreenSize().Height < 480)
+#endif
             {
                 if (UserConfigParams::m_old_driver_popup)
                 {
@@ -2531,7 +2544,7 @@ int main(int argc, char *argv[])
             }
             else if (!CVS->isGLSL() && irr_driver->getVideoDriver()->getDriverType() != video::EDT_VULKAN)
             {
-                #if !defined(MOBILE_STK)
+                #if !defined(MOBILE_STK) && !defined(N64)  // the console GL is fixed
                 if (UserConfigParams::m_old_driver_popup)
                 {
                     #ifdef USE_GLES2
