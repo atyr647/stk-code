@@ -14,6 +14,7 @@ switchable back on; tested in ares using the build scripts from
 | Blocker | **CPU speed.** The race logic alone runs at 19 frames/s, about 3x slower than real time (see [Performance](#performance)). |
 | Assets | Every stock track, kart, texture and sound is converted ([tools/stk_n64_assets.py](tools/stk_n64_assets.py)). **All 21 race tracks validated as faithful.** |
 | Collision | Served from cartridge ROM through a 128 KB cache, bit-for-bit what STK would build in RAM ([details](#track-collision-from-rom)). |
+| **Full game (client)** | **Boots in ares to STK's real menus** (profile creation with the on-screen keyboard, login, main menu), driven by the N64 controller, and **races run** on Snow Peak, Shifting Sands, Snow Mountain, Mini Golf, Hacienda and Fort Magma (see [Client](#client-the-full-game)). Under 1 frame/s in a race. Lighthouse and Zen Garden do not fit in RAM yet. No audio yet. |
 
 ## Building and running
 
@@ -323,25 +324,79 @@ STK source changes, all inert on PC unless a low-memory flag is set
   - tree leaves reserved exactly;
   - hooks for trees and triangles that live outside memory.
 
+## Client (the full game)
+
+The client is STK's normal build with its fixed-function (legacy OpenGL)
+renderer, on libdragon's OpenGL through an SDL2 back-end
+([compat/src/sdl_n64.c](compat/src/sdl_n64.c)): display 320x240 16-bit
+double-buffered, the controllers as SDL joysticks with a game-controller
+mapping (STK's console layout: A accelerate, B brake, Z fire, R drift; the
+stick steers and moves through menus), no audio device yet.
+
+What it takes to fit 6.6 MB of code and the game's data in 8 MB:
+
+- **Code paging** ([compat/src/pager.c](compat/src/pager.c)): everything but
+  libdragon, newlib, libgcc and the platform layer is linked at a TLB-mapped
+  address and stays on the cartridge, with its constants and C++ exception
+  tables; 8 KB blocks are read into a 1 MB pool when first touched, and
+  TLB refills of loaded blocks are served by the refill vector. Small
+  blocks matter: a menu frame touches hundreds of scattered functions, and
+  32 KB blocks made its working set larger than the pool (1 frame/s); with
+  8 KB the menus run at 8-10 frames/s with no page faults.
+- **Textures** are libdragon sprites in the smallest exact format: CI4 for
+  16 colours (64x64 in 2 KB), CI8 / RGBA16 at 2048 texels otherwise, IA8
+  for font pages and soft grey masks (shadows). The cartridge's images are
+  colour-reduced when the ROM is built ([tools/n64_gui_images.py](tools/n64_gui_images.py)),
+  so the console only counts colours.
+- Text is sized as on a 640x480 screen (the smallest STK lays its menus
+  out for); at 320x240 it would be 5 pixels high.
+- Lazy or dropped data: the Thai dictionary and country names load on
+  demand; fonts for non-Latin scripts and CJK/emoji are left off the
+  cartridge while translations are off; kart animation keyframes that
+  interpolation reproduces are dropped as they are loaded; vertex arrays
+  are allocated at their final size; the height-map collision tree is only
+  built when weather particles use it.
+- First start uses STK's lowest graphics preset; render-to-texture (the
+  minimap) works by copying from the frame.
+
+Races (2 karts, the profiling build in ares, 1 MB code pool):
+
+| Track | State |
+|---|---|
+| Snow Peak, Shifting Sands, Snow Mountain, Mini Golf, Hacienda, Fort Magma | race runs (4-7 frames per 10 s) |
+| Lighthouse, Zen Garden | out of memory while loading scenery: library objects (pine trees: 2,362 triangles at their finest level, cap 337) and LOD groups keep far more geometry than the asset budget allows |
+
+Known gaps: no audio; the focus highlight of icon menus is not drawn; a race
+runs at under 1 frame/s (page faults: ~450/s; CPU); some key presses are
+lost at low frame rates.
+
 ## Next steps
 
-1. Speed, 3x to go for the headless race:
+1. Client memory: make the asset pipeline meet its own budgets for library
+   objects and LOD groups (the finest levels of a group replaced by the
+   coarsest, as planned), so every track fits; then measure how small the
+   code pool can be in a race.
+2. Client speed: race page faults (lay hot code out together, from the
+   profiler's samples), then the CPU work below.
+3. Audio back-end (libdragon mixer behind SDL audio), the menu focus
+   highlight.
+4. Speed, 3x to go for the headless race:
    - the collision ray walk (26%) and the rest of the collision path;
    - per-frame allocations (InterpolationArray copies in the kart and AI
      code) and `dynamic_cast`;
    - if that is not enough, a decision on fidelity: physics at 60 Hz
      instead of 120 Hz would halve the physics cost but changes how karts
      handle.
-2. After the race, STK's shutdown stalls after its last "Destroyed
+5. After the race, STK's shutdown stalls after its last "Destroyed
    singleton" and `stk_main` never returns (harmless for a game that is
    switched off, but it hides the end-of-run report).
-3. Memory headroom (~230 KB at the loading peak), needed for the renderer:
+6. Memory headroom (~230 KB at the loading peak), needed for the renderer:
    - trim libstdc++'s locale;
    - avoid holding the whole main track mesh while it is converted.
-4. Renderer: an N64 back-end for Irrlicht's scene, using libdragon GL or
-   Tiny3D, with render geometry streamed from ROM like collision. Then input
-   and audio back-ends, and the client (non-server) build.
-5. Karts that stall above the triangle budget: a no-pruning fallback, or
+7. Renderer: the client draws through libdragon's OpenGL; if that is too
+   slow, a back-end for Irrlicht's scene on Tiny3D, with render geometry
+   streamed from ROM like collision.
+8. Karts that stall above the triangle budget: a no-pruning fallback, or
    joint culling.
-6. Cartridge budget: collision (28 MB) plus meshes, audio and textures must
+9. Cartridge budget: collision (28 MB) plus meshes, audio and textures must
    fit in 64 MB.
