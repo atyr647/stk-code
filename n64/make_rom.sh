@@ -109,6 +109,11 @@ if [ "${STK_N64_SERVER:-0}" != 1 ]; then
         find "$WORK/fs/data" -type f -iname '*.ogg' -exec truncate -s 0 {} +
     fi
 fi
+if [ "${STK_N64_SERVER:-0}" != 1 ]; then
+    # images at the size STK would resize them to on the N64 (<= 64x64),
+    # skin borders scaled along: see the script
+    python3 "$(dirname "$0")/tools/n64_gui_images.py" "$WORK/fs/data"
+fi
 [ -n "$ARGS" ] && cp "$ARGS" "$WORK/fs/data/n64_args.txt"
 
 "$BIN/mkdfs" "$WORK/data.dfs" "$WORK/fs" >/dev/null

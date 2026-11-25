@@ -98,7 +98,10 @@ std::vector<FT_Face>
         FT_Face face = NULL;
         font_manager->checkFTError(FT_New_Face(
             m_ft_library, font.c_str(), 0, &face), font + " is loaded");
-        ret.push_back(face);
+        // a font that failed to load (the error is logged above) is left
+        // out: every face in the list is used as a valid FT_Face
+        if (face)
+            ret.push_back(face);
     }
     return ret;
 }   // loadTTF

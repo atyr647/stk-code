@@ -1,5 +1,5 @@
 diff --git a/src/GL/gl.c b/src/GL/gl.c
-index 249eb72..569e69a 100644
+index 249eb72..fafa436 100644
 --- a/src/GL/gl.c
 +++ b/src/GL/gl.c
 @@ -17,6 +17,8 @@
@@ -11,6 +11,56 @@ index 249eb72..569e69a 100644
  DEFINE_RSP_UCODE(rsp_gl);
  DEFINE_RSP_UCODE(rsp_gl_pipeline);
  
+@@ -311,33 +313,33 @@ void gl_set_flag2(GLenum target, bool value)
+     case GL_CLIP_PLANE3:
+     case GL_CLIP_PLANE4:
+     case GL_CLIP_PLANE5:
+-        assertf(!value, "User clip planes are not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "User clip planes are not supported!");
+         break;
+     case GL_STENCIL_TEST:
+-        assertf(!value, "Stencil test is not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Stencil test is not supported!");
+         break;
+     case GL_COLOR_LOGIC_OP:
+     case GL_INDEX_LOGIC_OP:
+-        assertf(!value, "Logical pixel operation is not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Logical pixel operation is not supported!");
+         break;
+     case GL_POINT_SMOOTH:
+     case GL_LINE_SMOOTH:
+     case GL_POLYGON_SMOOTH:
+-        assertf(!value, "Smooth rendering is not supported (Use multisampling instead)!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Smooth rendering is not supported (Use multisampling instead)!");
+         break;
+     case GL_LINE_STIPPLE:
+     case GL_POLYGON_STIPPLE:
+-        assertf(!value, "Stipple is not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Stipple is not supported!");
+         break;
+     case GL_POLYGON_OFFSET_FILL:
+     case GL_POLYGON_OFFSET_LINE:
+     case GL_POLYGON_OFFSET_POINT:
+-        assertf(!value, "Polygon offset is not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Polygon offset is not supported!");
+         break;
+     case GL_SAMPLE_ALPHA_TO_COVERAGE_ARB:
+     case GL_SAMPLE_ALPHA_TO_ONE_ARB:
+     case GL_SAMPLE_COVERAGE_ARB:
+-        assertf(!value, "Coverage value manipulation is not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Coverage value manipulation is not supported!");
+         break;
+     case GL_MAP1_COLOR_4:
+     case GL_MAP1_INDEX:
+@@ -357,7 +359,7 @@ void gl_set_flag2(GLenum target, bool value)
+     case GL_MAP2_TEXTURE_COORD_4:
+     case GL_MAP2_VERTEX_3:
+     case GL_MAP2_VERTEX_4:
+-        assertf(!value, "Evaluators are not supported!");
++        if (value) gl_set_error(GL_INVALID_ENUM, "Evaluators are not supported!");
+         break;
+     default:
+         gl_set_error(GL_INVALID_ENUM, "%#04lx is not a valid enable target", target);
 @@ -399,7 +401,7 @@ void glClear(GLbitfield buf)
      __rdpq_set_mode_fill();
  

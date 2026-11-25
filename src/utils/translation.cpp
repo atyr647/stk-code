@@ -164,6 +164,74 @@ static void loadThaiDictionary()
 }   // loadThaiDictionary
 
 // ----------------------------------------------------------------------------
+/** Reads country_names.tsv into the localized country name map: every
+ *  language, or only only_language and English (the fallback).
+ */
+static void loadCountryNames(
+    std::map<std::string, std::map<std::string, irr::core::stringw> >& names,
+    const std::string& only_language)
+{
+    const std::string file_name = file_manager->getAsset("country_names.tsv");
+    try
+    {
+        std::ifstream in(FileUtils::getPortableReadingPath(file_name));
+        if (!in.is_open())
+        {
+            Log::error("translation", "error: failure opening: '%s'.",
+                file_name.c_str());
+        }
+        else
+        {
+            std::vector<std::string> header;
+            std::string line;
+            while (!StringUtils::safeGetline(in, line).eof())
+            {
+                std::vector<std::string> lists = StringUtils::split(line, '\t');
+                if (lists.size() < 2)
+                {
+                    Log::error("translation", "Invaild list.");
+                    break;
+                }
+                if (lists[0] == "country_code")
+                {
+                    header = lists;
+                    continue;
+                }
+                if (lists.size() != header.size())
+                {
+                    Log::error("translation", "Different column size.");
+                    break;
+                }
+                if (names.find(lists[0]) ==
+                    names.end())
+                {
+                    names[lists[0]] =
+                    std::map<std::string, irr::core::stringw>();
+                }
+                for (unsigned i = 1; i < lists.size(); i++)
+                {
+                    auto& ret = names.at(lists[0]);
+                    if (only_language.empty() || header[i] == only_language ||
+                        header[i] == "en")
+                        ret[header[i]] = StringUtils::utf8ToWide(lists[i]);
+                }
+            }
+        }
+    }
+    catch (std::exception& e)
+    {
+        Log::error("translation", "error: failure extract localized country name.");
+        Log::error("translation", "%s", e.what());
+    }
+}   // loadCountryNames
+
+#ifdef STK_LOW_MEMORY
+/** The language the country name map was loaded for: STK_LOW_MEMORY keeps
+ *  one language (all 70 take over a megabyte), loaded on first use. */
+static std::string g_country_names_language;
+#endif
+
+// ----------------------------------------------------------------------------
 Translations::Translations() //: m_dictionary_manager("UTF-16")
 {
 #ifndef SERVER_ONLY
@@ -256,60 +324,10 @@ Translations::Translations() //: m_dictionary_manager("UTF-16")
         }
     }
 
+#ifndef STK_LOW_MEMORY
     if (m_localized_country_codes.empty())
-    {
-        const std::string file_name = file_manager->getAsset("country_names.tsv");
-        try
-        {
-            std::ifstream in(FileUtils::getPortableReadingPath(file_name));
-            if (!in.is_open())
-            {
-                Log::error("translation", "error: failure opening: '%s'.",
-                    file_name.c_str());
-            }
-            else
-            {
-                std::vector<std::string> header;
-                std::string line;
-                while (!StringUtils::safeGetline(in, line).eof())
-                {
-                    std::vector<std::string> lists = StringUtils::split(line, '\t');
-                    if (lists.size() < 2)
-                    {
-                        Log::error("translation", "Invaild list.");
-                        break;
-                    }
-                    if (lists[0] == "country_code")
-                    {
-                        header = lists;
-                        continue;
-                    }
-                    if (lists.size() != header.size())
-                    {
-                        Log::error("translation", "Different column size.");
-                        break;
-                    }
-                    if (m_localized_country_codes.find(lists[0]) ==
-                        m_localized_country_codes.end())
-                    {
-                        m_localized_country_codes[lists[0]] =
-                        std::map<std::string, irr::core::stringw>();
-                    }
-                    for (unsigned i = 1; i < lists.size(); i++)
-                    {
-                        auto& ret = m_localized_country_codes.at(lists[0]);
-                        ret[header[i]] = StringUtils::utf8ToWide(lists[i]);
-                    }
-                }
-            }
-        }
-        catch (std::exception& e)
-        {
-            Log::error("translation", "error: failure extract localized country name.");
-            Log::error("translation", "%s", e.what());
-        }
-    }
-
+        loadCountryNames(m_localized_country_codes, "");
+#endif
 #ifndef STK_LOW_MEMORY
     // (STK_LOW_MEMORY: built the first time Thai text needs breaking, see
     // insertThaiBreakMark: the dictionary takes about 3.4 MB)
@@ -784,6 +802,15 @@ const std::string Translations::getLocalizedName(const std::string& str) const
  */
 irr::core::stringw Translations::getLocalizedCountryName(const std::string& country_code) const
 {
+#ifdef STK_LOW_MEMORY
+    if (g_country_names_language != m_current_language_tag ||
+        m_localized_country_codes.empty())
+    {
+        m_localized_country_codes.clear();
+        loadCountryNames(m_localized_country_codes, m_current_language_tag);
+        g_country_names_language = m_current_language_tag;
+    }
+#endif
     auto it = m_localized_country_codes.find(country_code);
     // If unknown 2 letter country just return the same
     if (it == m_localized_country_codes.end())
