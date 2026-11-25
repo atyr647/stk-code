@@ -2350,7 +2350,12 @@ void Track::loadTrackModel(bool reverse_track, unsigned int mode_id)
     for (auto* obj : objs_removing)
         m_track_object_manager->removeObject(obj);
 
-    if (!GUIEngine::isNoGraphics())
+    // The height map only stops weather particles at the ground, and they
+    // exist with full particle effects only (LocalPlayerController::
+    // initParticleEmitter): otherwise it would be a second collision tree
+    // of the whole track, built in RAM for nothing.
+    if (!GUIEngine::isNoGraphics() && m_sky_particles != NULL &&
+        UserConfigParams::m_particles_effects > 1)
     {
         m_height_map_mesh = new TriangleMesh(/*can_be_transformed*/false);
         m_height_map_mesh->copyFrom(*m_track_mesh);

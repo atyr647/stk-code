@@ -297,9 +297,12 @@ SDL_DisplayOrientation SDL_GetDisplayOrientation(int display)
 }
 
 /* --------------------------------------------------------------- OpenGL -- */
+static surface_t *g_frame;              /* the frame being drawn */
+
 static void frame_begin(void)
 {
-    rdpq_attach(display_get(), &g_zbuffer);
+    g_frame = display_get();
+    rdpq_attach(g_frame, &g_zbuffer);
     gl_context_begin();
 }
 
@@ -376,7 +379,8 @@ static const struct { const char *name; void *fn; } g_gl_unsupported[] =
  * wrapped: each texture's image is resampled to power-of-two sides (the RDP
  * wraps only those; sub-image updates map through the same ratio) and kept
  * here as a libdragon sprite in the smallest format that holds it exactly:
- *   - IA8 (intensity+alpha) for single-channel masks (font pages): 64x64;
+ *   - IA8 (intensity+alpha) for single-channel masks (font pages) and grey
+ *     images with soft alpha (shadows, smoke): 64x64;
  *   - CI4 (16-colour palette) when the image has at most 16 colours (in
  *     RGBA 5551): 64x64 fits TMEM next to its palette, in 2 KB;
  *   - otherwise at most 2048 texels (64x32): CI8 when it has at most 256
@@ -837,6 +841,29 @@ static void tex_pack_fit(n64_tex_t *t, surface_t *img)
     }
 }
 
+/* a grey image with soft alpha (a kart's shadow, smoke): kept as IA8,
+ * whose 4 bits of alpha RGBA16's one bit would turn into a hard edge */
+static int soft_grey(GLenum format, GLenum type, const void *data, int w,
+                     int h)
+{
+    const int bpp = bytes_per_pixel(format, type);
+    int soft = 0;
+    for (int y = 0; y < h; y++)
+    {
+        const uint8_t *row = (const uint8_t*)data + (size_t)y * w * bpp;
+        for (int x = 0; x < w; x++)
+        {
+            uint8_t c[4];
+            if (!read_pixel(format, type, row, x, c))
+                return 0;
+            if (abs(c[0] - c[1]) > 8 || abs(c[1] - c[2]) > 8)
+                return 0;
+            soft |= c[3] >= 16 && c[3] < 240;
+        }
+    }
+    return soft;
+}
+
 /* the power of two nearest to n (in log terms) */
 static int nearest_pot(int n)
 {
@@ -865,7 +892,8 @@ static void n64_glTexImage2D(GLenum target, GLint level, GLint internalformat,
                    (unsigned long)format, (unsigned long)type);
         return;
     }
-    const int mask = format == GL_RED || format == GL_ALPHA;
+    const int mask = format == GL_RED || format == GL_ALPHA ||
+                     (data && soft_grey(format, type, data, width, height));
     int dw = nearest_pot(width), dh = nearest_pot(height);
     while (dw * dh > TMEM_BYTES)          /* IA8 and CI4: 4096 texels */
     {
@@ -922,6 +950,46 @@ static void n64_glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
     tex_pack_fit(t, &img);
 }
 
+/* Irrlicht renders to a texture without framebuffer objects by drawing
+ * into the frame and copying it (COpenGLTexture::unbindRTT): STK's minimap.
+ * The copy waits for the RDP and reads the frame from RDRAM. */
+static void n64_glCopyTexSubImage2D(GLenum target, GLint level, GLint xoff,
+                                    GLint yoff, GLint x, GLint y, GLsizei w,
+                                    GLsizei h)
+{
+    if (target != GL_TEXTURE_2D || level != 0 || !g_frame || w <= 0 || h <= 0)
+        return;
+    if (x < 0) { w += x; xoff -= x; x = 0; }
+    if (y < 0) { h += y; yoff -= y; y = 0; }
+    if (x + w > g_frame->width) w = g_frame->width - x;
+    if (y + h > g_frame->height) h = g_frame->height - y;
+    if (w <= 0 || h <= 0)
+        return;
+    uint8_t *rgba = malloc((size_t)w * h * 4);
+    if (!rgba)
+        return;
+    rspq_wait();
+    for (int r = 0; r < h; r++)
+    {
+        /* GL counts rows from the bottom of the frame */
+        const int fy = g_frame->height - 1 - (y + r);
+        const uint16_t *in = (const uint16_t*)((const uint8_t*)
+            g_frame->buffer + fy * g_frame->stride) + x;
+        uint8_t *out = rgba + (size_t)r * w * 4;
+        for (int c = 0; c < w; c++)
+        {
+            const uint16_t v = in[c];
+            out[4 * c + 0] = ((v >> 11) & 31) * 255 / 31;
+            out[4 * c + 1] = ((v >> 6) & 31) * 255 / 31;
+            out[4 * c + 2] = ((v >> 1) & 31) * 255 / 31;
+            out[4 * c + 3] = (v & 1) ? 255 : 0;
+        }
+    }
+    n64_glTexSubImage2D(GL_TEXTURE_2D, 0, xoff, yoff, w, h, GL_RGBA,
+                        GL_UNSIGNED_BYTE, rgba);
+    free(rgba);
+}
+
 static void n64_glBindTexture(GLenum target, GLuint name)
 {
     if (target == GL_TEXTURE_2D)
@@ -951,6 +1019,7 @@ static const struct { const char *name; void *fn; } g_gl_wrapped[] =
 {
     { "glTexImage2D", (void*)n64_glTexImage2D },
     { "glTexSubImage2D", (void*)n64_glTexSubImage2D },
+    { "glCopyTexSubImage2D", (void*)n64_glCopyTexSubImage2D },
     { "glBindTexture", (void*)n64_glBindTexture },
     { "glDeleteTextures", (void*)n64_glDeleteTextures },
     { "glGenerateMipmap", (void*)n64_glGenerateMipmap },

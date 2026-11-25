@@ -20,7 +20,9 @@ from the number of colours it finds, without quantising anything itself):
     resized here with a proper filter rather than on the console by
     dropping texels; 256 colours, kept as CI8.
 
-Colours are reduced with dithering; alpha becomes one bit (the console's
+Grey images with soft alpha (shadows, smoke) keep it: the console stores
+them as IA8 (4 bits of grey, 4 of alpha). Otherwise colours are reduced
+with dithering; alpha becomes one bit (the console's
 texture formats have one bit of alpha), and transparent texels all take the
 average colour of the opaque ones, so they cost one palette entry and
 filtering does not bleed a stray colour into edges. Images are written as
@@ -71,9 +73,25 @@ def target(size, cap, gui=False):
     return (w, h)
 
 
+def soft_grey(im):
+    """A grey image with soft alpha (a shadow, smoke, a glow mask): the
+    console keeps it as IA8, 4 bits of grey and 4 of alpha, and its alpha
+    must not be cut to one bit."""
+    r, g, b, a = im.split()
+    lo, hi = a.getextrema()
+    if not any(16 <= v < 240 for v in a.getdata()):
+        return False
+    from PIL import ImageChops
+    return (ImageChops.difference(r, g).getextrema()[1] <= 8 and
+            ImageChops.difference(g, b).getextrema()[1] <= 8)
+
+
 def reduce_colours(im, colours):
-    """im (any mode) as RGBA with at most `colours` colours, 1-bit alpha."""
+    """im (any mode) as RGBA with at most `colours` colours, 1-bit alpha;
+    soft-alpha grey images are left as they are (soft_grey)."""
     im = im.convert('RGBA')
+    if soft_grey(im):
+        return im
     alpha = im.getchannel('A').point(lambda a: 255 if a >= 128 else 0)
     opaque = alpha.getbbox() is not None
     rgb = im.convert('RGB')
