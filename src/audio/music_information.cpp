@@ -24,6 +24,7 @@
 #include "audio/music_dummy.hpp"
 #include "audio/music_manager.hpp"
 #include "audio/music_ogg.hpp"
+#include "audio/music_wav64.hpp"
 #include "config/user_config.hpp"
 #include "io/file_manager.hpp"
 #include "tracks/track.hpp"
@@ -206,7 +207,11 @@ void MusicInformation::startMusic()
 #ifdef ENABLE_SOUND
     if (UserConfigParams::m_enable_sound)
     {
+#ifdef N64
+        m_normal_music = new MusicWav64(m_normal_loop_start, m_normal_loop_end);
+#else
         m_normal_music = new MusicOggStream(m_normal_loop_start, m_normal_loop_end);
+#endif
     }
     else
 #endif
@@ -250,7 +255,11 @@ void MusicInformation::startMusic()
 #ifdef ENABLE_SOUND
     if (UserConfigParams::m_enable_sound)
     {
+#ifdef N64
+        m_fast_music = new MusicWav64(m_fast_loop_start, m_fast_loop_end);
+#else
         m_fast_music = new MusicOggStream(m_fast_loop_start, m_fast_loop_end);
+#endif
     }
     else
 #endif

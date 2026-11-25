@@ -25,6 +25,9 @@
 #include "utils/log.hpp"
 
 #ifdef ENABLE_SOUND
+#ifdef N64
+extern "C" float alBufferWav64N64(ALuint buffer, const char *path);
+#endif
 #  include <vorbis/codec.h>
 #  include <vorbis/vorbisfile.h>
 #  ifdef HAVE_OPUS
@@ -111,12 +114,24 @@ bool SFXBuffer::load()
         assert(alIsBuffer(m_buffer));
     
         bool load_success = false;
+#ifdef N64
+        // The cartridge holds each sound as a .wav64 next to the .ogg name
+        // STK knows, streamed and decoded by libdragon's mixer
+        // (n64/compat/src/al_n64.c); a decoded buffer would not fit in RAM.
+        const std::string wav64 = StringUtils::removeExtension(m_file) +
+                                  ".wav64";
+        const float duration = alBufferWav64N64(m_buffer, wav64.c_str());
+        load_success = duration >= 0.0f;
+        if (load_success && m_duration < 0)
+            m_duration = duration;
+#else
 #ifdef HAVE_OPUS
         if (StringUtils::getExtension(m_file) == "opus")
             load_success = loadOpusBuffer(m_file, m_buffer);
         else
 #endif
             load_success = loadVorbisBuffer(m_file, m_buffer);
+#endif
 
         if (!load_success)
         {

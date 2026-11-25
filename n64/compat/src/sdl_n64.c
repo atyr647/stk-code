@@ -55,8 +55,7 @@ int SDL_InitSubSystem(Uint32 flags)
     {
         joypad_init();
         g_joypad_up = 1;
-        void pad_install(void);
-        pad_install();
+
     }
     return 0;
 }
@@ -1240,6 +1239,11 @@ SDL_Joystick *SDL_GameControllerGetJoystick(SDL_GameController *c) { return c ? 
 const char *SDL_GameControllerName(SDL_GameController *c) { (void)c; return "N64 Controller"; }
 char *SDL_GameControllerMapping(SDL_GameController *c) { (void)c; return strdup(N64_MAPPING); }
 
+/* every libdragon joypad call (polling, rumble) is made under this lock,
+ * once the controller thread is running (pad_start) */
+static kmutex_t g_pad_lock;
+static int g_pad_thread_up;
+
 /* rumble: the Rumble Pak is on or off; a request runs until its end tick */
 static uint32_t g_rumble_until[JOYPAD_PORT_COUNT];
 static uint8_t g_rumbling[JOYPAD_PORT_COUNT];
@@ -1249,9 +1253,15 @@ int SDL_GameControllerRumble(SDL_GameController *c, Uint16 low, Uint16 high,
 {
     if (!c || !c->joystick) return set_error("no controller");
     const int p = c->joystick->port;
-    if (!joypad_get_rumble_supported(p)) return set_error("no Rumble Pak");
+    if (!g_pad_thread_up) return set_error("controllers not started");
+    kmutex_lock(&g_pad_lock);
+    const bool rumble = joypad_get_rumble_supported(p);
+    kmutex_unlock(&g_pad_lock);
+    if (!rumble) return set_error("no Rumble Pak");
     const int on = (low | high) != 0 && duration_ms > 0;
+    kmutex_lock(&g_pad_lock);
     joypad_set_rumble_active(p, on);
+    kmutex_unlock(&g_pad_lock);
     g_rumbling[p] = on;
     g_rumble_until[p] = TICKS_READ() + TICKS_FROM_MS(duration_ms);
     return 0;
@@ -1293,6 +1303,7 @@ static void push(const SDL_Event *e)
 #define PAD_ZONE  21845             /* STK counts a stick pushed past 2/3 */
 
 static SDL_Event g_pad_queue[PAD_QUEUE];
+
 static volatile unsigned g_pad_head, g_pad_tail;
 static joypad_inputs_t g_pad_last[JOYPAD_PORT_COUNT];
 static uint8_t g_pad_connected[JOYPAD_PORT_COUNT];
@@ -1326,6 +1337,7 @@ static void pad_push(const SDL_Event *e)       /* with interrupts disabled */
 
 static void pad_sample(void)
 {
+    kmutex_lock(&g_pad_lock);
     joypad_poll();
     disable_interrupts();           /* the queue: poll_controllers() */
     int index = 0;
@@ -1406,6 +1418,7 @@ static void pad_sample(void)
         }
     }
     enable_interrupts();
+    kmutex_unlock(&g_pad_lock);
 }
 
 static int pad_thread(void *arg)
@@ -1422,8 +1435,15 @@ static int pad_thread(void *arg)
     return 0;
 }
 
-void pad_install(void)
+/* Started from the game loop's first poll, not when the controllers are
+ * initialised: libdragon identifies the controllers' accessories in the
+ * first moments after joypad_init(), and polling from another thread then
+ * corrupted memory or hung the game (about one boot in ten). */
+static void pad_start(void)
 {
+    kmutex_init(&g_pad_lock, KMUTEX_STANDARD);
+    pad_sample();
+    g_pad_thread_up = 1;
     kthread_new("pads", 4096, 10, pad_thread, NULL);
 }
 
@@ -1431,11 +1451,15 @@ static void poll_controllers(void)
 {
     if (!g_joypad_up)
         return;
+    if (!g_pad_thread_up)
+        pad_start();
     const uint32_t now = TICKS_READ();
     for (int p = 0; p < JOYPAD_PORT_COUNT; p++)
         if (g_rumbling[p] && (int32_t)(now - g_rumble_until[p]) >= 0)
         {
+            kmutex_lock(&g_pad_lock);
             joypad_set_rumble_active(p, false);
+            kmutex_unlock(&g_pad_lock);
             g_rumbling[p] = 0;
         }
     for (;;)

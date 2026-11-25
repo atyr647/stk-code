@@ -779,7 +779,8 @@ class Pipeline:
                     self.image(p, self.b["texture_texels"])
 
     def copy_audio(self):
-        """music/ and sfx/: XML descriptors copied; every .ogg converted to
+        """music/, sfx/ and the tracks' own .ogg: XML descriptors copied;
+        every .ogg converted to
         libdragon's .wav64 next to it (same base name), with the RSP's ULC
         codec -- measured smallest and cheapest to decode of libdragon's
         three (see n64/README.md). Needs oggdec and libdragon's audioconv64
@@ -799,6 +800,12 @@ class Pipeline:
             for f in sorted(os.listdir(src)):
                 if f.endswith(".ogg"):
                     jobs.append((d, os.path.join(src, f)))
+        # tracks bring their own music (and a few sounds): converted as music
+        tracks = os.path.join(self.assets, "tracks")
+        for root, _d, files in os.walk(tracks):
+            for f in sorted(files):
+                if f.endswith(".ogg"):
+                    jobs.append(("music", os.path.join(root, f)))
         if not have_tools:
             self.log("  ! oggdec/audioconv64 missing: copying .ogg unconverted")
             for d, p in jobs:
