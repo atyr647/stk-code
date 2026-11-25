@@ -290,6 +290,14 @@ void KartSelectionScreen::init()
 #endif
     m_instance_ptr = this;
     Screen::init();
+#ifdef N64
+    // (again now that the widgets exist: a text box is only hidden then)
+    for (const char* id : { "search", "favorite", "favorite_label" })
+    {
+        if (Widget* w = getWidget(id))
+            w->setVisible(false);
+    }
+#endif
     m_must_delete_on_back = false;
 
     RibbonWidget* tabs = getWidget<RibbonWidget>("kartgroups");

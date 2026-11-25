@@ -218,6 +218,14 @@ void TracksAndGPScreen::beforeAddingWidget()
 
 void TracksAndGPScreen::init()
 {
+#ifdef N64
+    // (again now that the widgets exist: a text box is only hidden then)
+    for (const char* id : { "search", "favorite", "favorite_label" })
+    {
+        if (Widget* w = getWidget(id))
+            w->setVisible(false);
+    }
+#endif
     DynamicRibbonWidget* gps_widget    = getWidget<DynamicRibbonWidget>("gps");
     DynamicRibbonWidget* tracks_widget = getWidget<DynamicRibbonWidget>("tracks");
     assert(tracks_widget != NULL);
