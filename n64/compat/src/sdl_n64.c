@@ -29,6 +29,7 @@
 #include <string.h>
 
 #include "SDL.h"
+#include "pad_n64.h"
 #include "SDL_vulkan.h"
 
 /* ---------------------------------------------------------------- errors -- */
@@ -1148,7 +1149,7 @@ void SDL_Vulkan_GetDrawableSize(SDL_Window *w, int *wd, int *ht)
  * (GamepadConfig::initSDLMapping, console layout) come out as: A accelerate,
  * B brake, Z fire, R drift, C-right nitro, C-down look back, C-up rescue,
  * Start pause; stick or D-pad steer; A/B select and cancel in menus. */
-#define N64_BUTTONS 10
+#define N64_BUTTONS STK_N64_PAD_BUTTONS
 
 struct _SDL_Joystick
 {
@@ -1219,22 +1220,10 @@ SDL_JoystickPowerLevel SDL_JoystickCurrentPowerLevel(SDL_Joystick *j)
     return SDL_JOYSTICK_POWER_WIRED;
 }
 
-static Sint16 axis_value(int8_t v, int invert)
-{
-    /* an N64 stick reaches about +-80 */
-    int s = (int)v * 32767 / 80;
-    if (invert) s = -s;
-    if (s > 32767) s = 32767;
-    if (s < -32768) s = -32768;
-    return (Sint16)s;
-}
-
 Sint16 SDL_JoystickGetAxis(SDL_Joystick *j, int axis)
 {
     if (!j || !g_joypad_up) return 0;
-    const joypad_inputs_t in = joypad_get_inputs(j->port);
-    return axis == 0 ? axis_value(in.stick_x, 0) :
-           axis == 1 ? axis_value(in.stick_y, 1) : 0;
+    return stk_n64_pad_axis(j->port, axis);
 }
 
 SDL_GameController *SDL_GameControllerOpen(int index)
@@ -1251,8 +1240,7 @@ const char *SDL_GameControllerName(SDL_GameController *c) { (void)c; return "N64
 char *SDL_GameControllerMapping(SDL_GameController *c) { (void)c; return strdup(N64_MAPPING); }
 
 /* libdragon's joypad calls are made by the vertical blank handler
- * (pad_sample), or with interrupts disabled (rumble), once pad_start() ran */
-static int g_pad_thread_up;
+ * (pad_n64.c), or with interrupts disabled (rumble), once it is installed */
 
 /* rumble: the Rumble Pak is on or off; a request runs until its end tick */
 static uint32_t g_rumble_until[JOYPAD_PORT_COUNT];
@@ -1263,7 +1251,7 @@ int SDL_GameControllerRumble(SDL_GameController *c, Uint16 low, Uint16 high,
 {
     if (!c || !c->joystick) return set_error("no controller");
     const int p = c->joystick->port;
-    if (!g_pad_thread_up) return set_error("controllers not started");
+    if (!stk_n64_pad_started()) return set_error("controllers not started");
     disable_interrupts();
     const bool rumble = joypad_get_rumble_supported(p);
     enable_interrupts();
@@ -1297,169 +1285,13 @@ static void push(const SDL_Event *e)
         g_queue[g_tail++ % QUEUE] = *e;
 }
 
-/* The controllers are sampled 60 times a second by a thread of their own
- * (above the game's priority, woken by each vertical blank), not once a
- * frame, and every change becomes
- * an event, in order: at the frame rates
- * of a race or of a screen being paged in (under 1 frame/s at worst) many
- * taps can fall within one frame, and reading the state once a frame
- * would see one of them, or none. (A thread for this was tried: preempting
- * the game 60 times a second tripped an assertion in libdragon's kernel
- * mutexes.) Only this handler calls joypad_poll();
- * stick motion is merged while it stays on the same side of the point
- * where STK counts it as pushed, so a stick moved slowly does not fill the
- * queue. */
-#define PAD_QUEUE 256
-#define PAD_ZONE  21845             /* STK counts a stick pushed past 2/3 */
-
-static SDL_Event g_pad_queue[PAD_QUEUE];
-
-static volatile unsigned g_pad_head, g_pad_tail;
-static joypad_inputs_t g_pad_last[JOYPAD_PORT_COUNT];
-static uint8_t g_pad_connected[JOYPAD_PORT_COUNT];
-
-static uint32_t pad_bits(const joypad_inputs_t *in)
-{
-    const unsigned b[N64_BUTTONS] = { in->btn.a, in->btn.b, in->btn.z,
-        in->btn.start, in->btn.l, in->btn.r, in->btn.c_up, in->btn.c_down,
-        in->btn.c_left, in->btn.c_right };
-    uint32_t m = 0;
-    for (int i = 0; i < N64_BUTTONS; i++)
-        if (b[i]) m |= 1u << i;
-    return m;
-}
-
-static unsigned pad_hat(const joypad_inputs_t *in)
-{
-    return (in->btn.d_up ? SDL_HAT_UP : 0) |
-           (in->btn.d_right ? SDL_HAT_RIGHT : 0) |
-           (in->btn.d_down ? SDL_HAT_DOWN : 0) |
-           (in->btn.d_left ? SDL_HAT_LEFT : 0);
-}
-
-static int pad_zone(int v) { return v > PAD_ZONE ? 1 : v < -PAD_ZONE ? -1 : 0; }
-
-static void pad_push(const SDL_Event *e)       /* with interrupts disabled */
-{
-    if (g_pad_tail - g_pad_head < PAD_QUEUE)
-        g_pad_queue[g_pad_tail++ % PAD_QUEUE] = *e;
-}
-
-static void pad_sample(void)
-{
-    disable_interrupts();
-    joypad_poll();
-    disable_interrupts();           /* the queue: poll_controllers() */
-    int index = 0;
-    for (int p = 0; p < JOYPAD_PORT_COUNT; p++)
-    {
-        SDL_Event e;
-        memset(&e, 0, sizeof(e));
-        const int is = joypad_is_connected(p);
-        if (is && !g_pad_connected[p])
-        {
-            e.type = SDL_JOYDEVICEADDED;
-            e.jdevice.which = index;
-            pad_push(&e);
-            memset(&g_pad_last[p], 0, sizeof(g_pad_last[p]));
-        }
-        else if (!is && g_pad_connected[p])
-        {
-            e.type = SDL_JOYDEVICEREMOVED;
-            e.jdevice.which = p;
-            pad_push(&e);
-        }
-        g_pad_connected[p] = is;
-        if (!is)
-            continue;
-        index++;
-        joypad_inputs_t in = joypad_get_inputs(p);
-        /* The D-pad moves the stick's axes to their ends: STK binds
-         * steering and menu navigation to one input, the stick when a
-         * controller has one, and the D-pad would do nothing. (It is still
-         * reported as a hat as well, for a player who binds it.) */
-        if (in.btn.d_left)  in.stick_x = -85;
-        if (in.btn.d_right) in.stick_x = 85;
-        if (in.btn.d_down)  in.stick_y = -85;
-        if (in.btn.d_up)    in.stick_y = 85;
-        const joypad_inputs_t old = g_pad_last[p];
-        g_pad_last[p] = in;
-
-        const uint32_t now_b = pad_bits(&in), old_b = pad_bits(&old);
-        for (int b = 0; b < N64_BUTTONS; b++)
-        {
-            const uint32_t bit = 1u << b;
-            if ((now_b ^ old_b) & bit)
-            {
-                memset(&e, 0, sizeof(e));
-                e.type = (now_b & bit) ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
-                e.jbutton.which = p;
-                e.jbutton.button = b;
-                e.jbutton.state = (now_b & bit) ? SDL_PRESSED : SDL_RELEASED;
-                pad_push(&e);
-            }
-        }
-        const int8_t axes[2] = { in.stick_x, in.stick_y };
-        const int8_t old_axes[2] = { old.stick_x, old.stick_y };
-        for (int a = 0; a < 2; a++)
-        {
-            if (axes[a] == old_axes[a])
-                continue;
-            memset(&e, 0, sizeof(e));
-            e.type = SDL_JOYAXISMOTION;
-            e.jaxis.which = p;
-            e.jaxis.axis = a;
-            e.jaxis.value = axis_value(axes[a], a == 1);
-            /* merge with a queued motion of this axis in the same zone */
-            if (g_pad_tail != g_pad_head)
-            {
-                SDL_Event *q = &g_pad_queue[(g_pad_tail - 1) % PAD_QUEUE];
-                if (q->type == SDL_JOYAXISMOTION && q->jaxis.which == p &&
-                    q->jaxis.axis == a &&
-                    pad_zone(q->jaxis.value) == pad_zone(e.jaxis.value))
-                {
-                    q->jaxis.value = e.jaxis.value;
-                    continue;
-                }
-            }
-            pad_push(&e);
-        }
-        const unsigned hat = pad_hat(&in), old_hat = pad_hat(&old);
-        if (hat != old_hat)
-        {
-            memset(&e, 0, sizeof(e));
-            e.type = SDL_JOYHATMOTION;
-            e.jhat.which = p;
-            e.jhat.hat = 0;
-            e.jhat.value = hat;
-            pad_push(&e);
-        }
-    }
-    enable_interrupts();
-    enable_interrupts();
-}
-
-static void pad_vblank(void *arg)
-{
-    (void)arg;
-    pad_sample();
-}
-
-/* Started from the game loop's first poll, not when the controllers are
- * initialised: libdragon identifies the controllers' accessories in the
- * first moments after joypad_init(). */
-static void pad_start(void)
-{
-    g_pad_thread_up = 1;
-    vi_install_vblank_handler(pad_vblank, NULL);
-}
-
+/* The controllers: sampled by pad_n64.c at every vertical blank (resident
+ * code: it runs in an interrupt), turned into SDL events here. */
 static void poll_controllers(void)
 {
     if (!g_joypad_up)
         return;
-    if (!g_pad_thread_up)
-        pad_start();
+    stk_n64_pad_start();
     const uint32_t now = TICKS_READ();
     for (int p = 0; p < JOYPAD_PORT_COUNT; p++)
         if (g_rumbling[p] && (int32_t)(now - g_rumble_until[p]) >= 0)
@@ -1469,26 +1301,43 @@ static void poll_controllers(void)
             enable_interrupts();
             g_rumbling[p] = 0;
         }
-    for (;;)
+    stk_n64_pad_event_t pe;
+    while (stk_n64_pad_next(&pe))
     {
-        disable_interrupts();
-        const int any = g_pad_tail != g_pad_head;
         SDL_Event e;
-        if (any)
-            e = g_pad_queue[g_pad_head++ % PAD_QUEUE];
-        enable_interrupts();
-        if (!any)
+        memset(&e, 0, sizeof(e));
+        switch (pe.kind)
+        {
+        case STK_N64_PAD_ADDED:
+            e.type = SDL_JOYDEVICEADDED;
+            e.jdevice.which = pe.index;
             break;
+        case STK_N64_PAD_REMOVED:
+            e.type = SDL_JOYDEVICEREMOVED;
+            e.jdevice.which = pe.port;
+            break;
+        case STK_N64_PAD_BUTTON:
+            e.type = pe.value ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
+            e.jbutton.which = pe.port;
+            e.jbutton.button = pe.index;
+            e.jbutton.state = pe.value ? SDL_PRESSED : SDL_RELEASED;
+            break;
+        case STK_N64_PAD_AXIS:
+            e.type = SDL_JOYAXISMOTION;
+            e.jaxis.which = pe.port;
+            e.jaxis.axis = pe.index;
+            e.jaxis.value = pe.value;
+            break;
+        default:
+            e.type = SDL_JOYHATMOTION;
+            e.jhat.which = pe.port;
+            e.jhat.hat = 0;
+            e.jhat.value = (Uint8)pe.value;
+            break;
+        }
 #ifdef STK_N64_LOG_HEAP
-        if (e.type == SDL_JOYAXISMOTION)
-            debugf("[n64] controller %d axis %d %d\n", e.jaxis.which,
-                   e.jaxis.axis, e.jaxis.value);
-        else if (e.type == SDL_JOYBUTTONDOWN || e.type == SDL_JOYBUTTONUP)
-            debugf("[n64] controller %d button %d %s\n", e.jbutton.which,
-                   e.jbutton.button, e.type == SDL_JOYBUTTONDOWN ? "down" : "up");
-        else if (e.type == SDL_JOYHATMOTION)
-            debugf("[n64] controller %d d-pad %x\n", e.jhat.which,
-                   e.jhat.value);
+        debugf("[n64] controller %d event %d: %d = %d\n", pe.port, pe.kind,
+               pe.index, pe.value);
 #endif
         push(&e);
     }

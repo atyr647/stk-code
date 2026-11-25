@@ -265,8 +265,15 @@ namespace
 
     bool is_return_address(uint32_t a)
     {
-        if (a < (uint32_t)__text_start + 8 || a >= (uint32_t)__text_end ||
-            (a & 3))
+        if (a & 3)
+            return false;
+        // Paged code (n64/compat/src/pager.c) cannot be read from an
+        // interrupt, where a page fault is not served: any address in it
+        // is taken as a candidate.
+        if (__paged_end > __paged_start &&
+            a >= (uint32_t)__paged_start + 8 && a < (uint32_t)__paged_end)
+            return true;
+        if (a < (uint32_t)__text_start + 8 || a >= (uint32_t)__text_end)
             return false;
         const uint32_t call = *(const uint32_t*)(a - 8);
         const uint32_t op = call >> 26;

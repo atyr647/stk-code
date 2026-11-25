@@ -21,6 +21,7 @@ set_source_files_properties(src/fpu_emu.c PROPERTIES COMPILE_FLAGS
     "-DSTK_N64_FPU_EMU_FIXED_REGS -ffixed-$f20 -ffixed-$f21 -ffixed-$f22 -ffixed-$f23 -ffixed-$f24 -ffixed-$f25 -ffixed-$f26 -ffixed-$f27 -ffixed-$f28 -ffixed-$f29 -ffixed-$f30 -ffixed-$f31")
 enable_language(ASM)   # src/pager_refill.S
 add_library(stk_n64_compat STATIC
+    src/pad_n64.c
     src/gthr_libdragon.c
     src/fpu_emu.c
     src/clock_libdragon.cpp
@@ -52,6 +53,10 @@ endif()
 option(STK_N64_CONSOLE "Show the log on an on-screen console. Costs 600 KB of heap (two 32-bit framebuffers); without it the log goes to the debug channel (ISViewer / USB) only" OFF)
 if(STK_N64_CONSOLE)
     add_compile_definitions(STK_N64_CONSOLE=1)
+endif()
+option(STK_N64_PAGER_TRACE "Log the addresses the code pager had to read from the cartridge (for n64/tools/n64_hot_order.py)" OFF)
+if(STK_N64_PAGER_TRACE)
+    add_compile_definitions(STK_N64_PAGER_TRACE=1)
 endif()
 option(STK_N64_LOG_HEAP "Prefix every log line with the heap in use" OFF)
 if(STK_N64_LOG_HEAP)

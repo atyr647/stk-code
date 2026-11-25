@@ -50,6 +50,8 @@
 #endif
 
 extern char __paged_start[], __paged_end[];   /* n64_paged.ld */
+extern char __paged_eh_frame[];
+extern void __register_frame_info(const void *begin, void *object);
 
 /* read by pager_refill.S */
 uint32_t __pager_nblocks;
@@ -62,6 +64,7 @@ static uint32_t g_nframes;
 static int32_t *g_frame_block;  /* block held by each frame, -1 = free */
 static uint32_t g_next;         /* next frame to (re)use: FIFO */
 static uint32_t g_faults;
+static uint64_t g_fault_ticks;
 
 extern void __pager_refill(void);
 extern void inthandler(void);
@@ -127,8 +130,12 @@ static void rom_read(void *dst, uint32_t pi, uint32_t size)
      * of the transfer, and a flag cleared below in that window was a hang
      * while files were being read. The flag is also given time to settle
      * for a transfer that ended just before. */
-    const int was_busy =
-        (*PI_STATUS & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) != 0;
+    /* (a DMA: a single-word write in flight -- the debug log's -- ends
+     * without an interrupt, and taking it for libdragon's transfer left our
+     * own completion flag set: libdragon's next transfer then looked
+     * finished the moment it started, files were read half-arrived, and a
+     * later wait for a transfer never ended) */
+    const int was_busy = (*PI_STATUS & PI_STATUS_DMA_BUSY) != 0;
     while (*PI_STATUS & (PI_STATUS_DMA_BUSY | PI_STATUS_IO_BUSY)) {}
     wait_ticks(32);                 /* < 1 us (46.875 MHz ticks) */
     const int libdragon_pending = was_busy ||
@@ -167,6 +174,33 @@ static void load_block(uint32_t block)
     g_faults++;
 }
 
+#ifdef STK_N64_PAGER_TRACE
+/* Where execution was when it needed a block that was not in RAM: the
+ * input of n64/tools/n64_hot_order.py, which places the code a race keeps
+ * coming back to together, so that it shares blocks. The log prints the
+ * addresses collected since the last call. */
+#define TRACE_SIZE 2048
+static uint32_t g_trace[TRACE_SIZE];
+static uint32_t g_trace_n;
+
+static void trace_fault(uint32_t va)
+{
+    g_trace[g_trace_n++ % TRACE_SIZE] = va;
+}
+
+void stk_n64_pager_trace_dump(void)
+{
+    static uint32_t done;
+    if (g_trace_n - done > TRACE_SIZE)
+        done = g_trace_n - TRACE_SIZE;
+    for (; done != g_trace_n; done++)
+        debugf("[fault] %08lx\n", (unsigned long)g_trace[done % TRACE_SIZE]);
+}
+#else
+#define trace_fault(va) ((void)0)
+void stk_n64_pager_trace_dump(void) {}
+#endif
+
 static void pager_exception(exception_t *ex)
 {
     const uint32_t code = ex->code;
@@ -178,7 +212,12 @@ static void pager_exception(exception_t *ex)
         if (va >= PAGED_BASE && block < __pager_nblocks)
         {
             if (!__pager_table[block])
+            {
+                const uint32_t t0 = TICKS_READ();
+                trace_fault(va);
                 load_block(block);
+                g_fault_ticks += TICKS_READ() - t0;
+            }
             set_entryhi((uint64_t)(int64_t)(int32_t)(PAGED_BASE + block * BLOCK_SIZE));
             set_entrylo(__pager_table[block],
                         __pager_table[block] + PAGER_ENTRYLO_STEP);
@@ -190,6 +229,9 @@ static void pager_exception(exception_t *ex)
 }
 
 uint32_t stk_n64_pager_faults(void) { return g_faults; }
+/* time spent reading blocks, in ms since boot (wraps with the tick counter) */
+uint32_t stk_n64_pager_ms(void) { return (uint32_t)(g_fault_ticks / (TICKS_PER_SECOND / 1000)); }
+
 
 /* ------------------------------------------------------------------ init --
  * Runs before every other constructor (constructors of paged code are
@@ -262,7 +304,16 @@ static void pager_init(void)
     __pager_nblocks = (linked + BLOCK_SIZE - 1) >> BLOCK_SHIFT;
     __pager_table = calloc(__pager_nblocks, sizeof(uint32_t));
     g_nframes = STK_N64_PAGER_FRAMES;
-    g_frames = memalign(1 << PAGER_PAGE_SHIFT, g_nframes * BLOCK_SIZE);
+    /* Aligned to the block size, not just the page size: the data cache
+     * (8 KB, direct mapped) is indexed by virtual address bits 12..4, one
+     * bit more than a 4 KB page's offset. A frame at an odd page boundary
+     * would give its two pages different cache lines when read through the
+     * mapping (paged constants) than when written at their unmapped
+     * address, and constants were then read stale -- from whatever block
+     * the frame held before -- on the builds whose heap happened to put
+     * the pool there. With block-aligned frames the two views agree. */
+    g_frames = memalign(BLOCK_SIZE, g_nframes * BLOCK_SIZE);
+    assertf(((uint32_t)g_frames & (BLOCK_SIZE - 1)) == 0, "pager: pool");
     g_frame_block = malloc(g_nframes * sizeof(int32_t));
     assertf(__pager_table && g_frames && g_frame_block, "pager: out of memory");
     for (uint32_t f = 0; f < g_nframes; f++)
@@ -277,5 +328,9 @@ static void pager_init(void)
     vec[1] = 0;                                                               /* nop */
     data_cache_hit_writeback((void*)vec, 8);
     inst_cache_hit_invalidate((void*)vec, 8);
+
+    /* the unwind tables are paged too (n64_paged.ld): now they can be read */
+    static uint32_t eh_object[8];       /* libgcc's struct object: 24 bytes */
+    __register_frame_info(__paged_eh_frame, eh_object);
 }
 #pragma GCC diagnostic pop

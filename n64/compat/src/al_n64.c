@@ -33,12 +33,13 @@
 #define MAX_SOURCES  128
 #define MIX_CHANNELS 24
 #define OUTPUT_RATE  32000
+#define SEEK_ALIGN   1024      /* libdragon: ULC_BLOCK_SIZE */
 
 typedef struct
 {
     int      used;
-    int      open;          /* has a wav64 */
-    wav64_t  wav;
+    wav64_t *wav;           /* its .wav64, NULL = none (allocated: libdragon
+                             * keeps pointers to it) */
 } n64_buffer_t;
 
 typedef struct
@@ -65,6 +66,20 @@ static int          g_up;
 
 /* sounds started and mixer buffers written, for the heap log's heartbeat */
 unsigned stk_n64_al_plays, stk_n64_al_buffers;
+static uint64_t g_audio_ticks;
+/* time spent mixing, in ms since boot */
+unsigned stk_n64_al_ms(void) { return (unsigned)(g_audio_ticks / (TICKS_PER_SECOND / 1000)); }
+
+/* The lock is only ever tried, with a yield in between: with a thread
+ * waiting inside the kernel for this mutex while another held it across
+ * file reads, the game stalled for good in about one boot in seven
+ * (libdragon's kernel is young; an assertion in its mutex code was seen
+ * as well). */
+static void al_lock(void)
+{
+    while (!kmutex_try_lock(&g_lock, 0))
+        kthread_yield();
+}
 
 static void set_error(ALenum e) { if (g_error == AL_NO_ERROR) g_error = e; }
 
@@ -79,7 +94,11 @@ void stk_n64_audio_service(void)
 {
     if (!g_up)
         return;
-    kmutex_lock(&g_lock);
+    /* never waits: if another thread is in an OpenAL call, the next call
+     * here (they are frequent) feeds the mixer */
+    if (!kmutex_try_lock(&g_lock, 0))
+        return;
+    const uint32_t t0 = TICKS_READ();
     while (audio_can_write())
     {
         short *buf = audio_write_begin();
@@ -87,6 +106,7 @@ void stk_n64_audio_service(void)
         audio_write_end();
         stk_n64_al_buffers++;
     }
+    g_audio_ticks += TICKS_READ() - t0;
     kmutex_unlock(&g_lock);
 }
 
@@ -107,8 +127,8 @@ static void reap(n64_source_t *s)
 {
     if (s->ch >= 0 && s->state == AL_PLAYING && !mixer_ch_playing(s->ch))
     {
-        const int n = (buffer_of(s->buffer) &&
-                       buffer_of(s->buffer)->wav.wave.channels == 2) ? 2 : 1;
+        const n64_buffer_t *rb = buffer_of(s->buffer);
+        const int n = (rb && rb->wav && rb->wav->wave.channels == 2) ? 2 : 1;
         for (int i = 0; i < n; i++)
             g_ch_owner[s->ch + i] = 0;
         s->ch = -1;
@@ -122,7 +142,7 @@ static void release_channel(n64_source_t *s)
         return;
     mixer_ch_stop(s->ch);
     const n64_buffer_t *b = buffer_of(s->buffer);
-    const int n = (b && b->wav.wave.channels == 2) ? 2 : 1;
+    const int n = (b && b->wav && b->wav->wave.channels == 2) ? 2 : 1;
     for (int i = 0; i < n; i++)
         g_ch_owner[s->ch + i] = 0;
     s->ch = -1;
@@ -184,7 +204,7 @@ static void apply_volume(n64_source_t *s)
     }
     if (gain > 1.0f) gain = 1.0f;
     const n64_buffer_t *b = buffer_of(s->buffer);
-    if (b && b->wav.wave.channels == 2)
+    if (b && b->wav && b->wav->wave.channels == 2)
         mixer_ch_set_vol(s->ch, gain, gain);      /* music: as recorded */
     else
         mixer_ch_set_vol(s->ch, gain * sqrtf((1.0f - pan) * 0.5f),
@@ -194,20 +214,20 @@ static void apply_volume(n64_source_t *s)
 static void apply_pitch(n64_source_t *s)
 {
     const n64_buffer_t *b = buffer_of(s->buffer);
-    if (s->ch >= 0 && b)
-        mixer_ch_set_freq(s->ch, b->wav.wave.frequency * s->pitch);
+    if (s->ch >= 0 && b && b->wav)
+        mixer_ch_set_freq(s->ch, b->wav->wave.frequency * s->pitch);
 }
 
 static void source_play(n64_source_t *s, int index)
 {
     n64_buffer_t *b = buffer_of(s->buffer);
     release_channel(s);
-    if (!b || !b->open)
+    if (!b || !b->wav)
     {
         s->state = AL_STOPPED;          /* nothing to play: as if it ended */
         return;
     }
-    const int n = b->wav.wave.channels == 2 ? 2 : 1;
+    const int n = b->wav->wave.channels == 2 ? 2 : 1;
     const int ch = alloc_channel(n, index + 1);
     if (ch < 0)
     {
@@ -216,7 +236,7 @@ static void source_play(n64_source_t *s, int index)
     }
     s->ch = ch;
     stk_n64_al_plays++;
-    mixer_ch_play(ch, &b->wav.wave);
+    mixer_ch_play(ch, &b->wav->wave);
     mixer_ch_set_loop(ch, s->looping);
     s->state = AL_PLAYING;
     apply_pitch(s);
@@ -261,7 +281,7 @@ ALenum alGetError(void)
 /* --------------------------------------------------------------- buffers -- */
 void alGenBuffers(ALsizei n, ALuint *ids)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     for (ALsizei k = 0; k < n; k++)
     {
         ids[k] = 0;
@@ -281,7 +301,7 @@ void alGenBuffers(ALsizei n, ALuint *ids)
 
 void alDeleteBuffers(ALsizei n, const ALuint *ids)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     for (ALsizei k = 0; k < n; k++)
     {
         n64_buffer_t *b = buffer_of(ids[k]);
@@ -294,9 +314,13 @@ void alDeleteBuffers(ALsizei n, const ALuint *ids)
                 g_src[i].buffer = 0;
                 g_src[i].state = AL_STOPPED;
             }
-        if (b->open)
-            wav64_close(&b->wav);
-        b->used = b->open = 0;
+        if (b->wav)
+        {
+            wav64_close(b->wav);
+            free(b->wav);
+            b->wav = NULL;
+        }
+        b->used = 0;
     }
     kmutex_unlock(&g_lock);
 }
@@ -314,37 +338,53 @@ void alBufferData(ALuint id, ALenum format, const ALvoid *data, ALsizei size,
  * seconds, or a negative number if it cannot be opened. */
 float alBufferWav64N64(ALuint id, const char *path)
 {
-    kmutex_lock(&g_lock);
+    /* the file is opened (read) outside the lock */
+    FILE *f = fopen(path, "rb");                /* wav64_open asserts */
+    if (!f)
+        return -1.0f;
+    fclose(f);
+    wav64_t *wav = malloc(sizeof(*wav));
+    if (!wav)
+        return -1.0f;
+    wav64_open(wav, path);
+    /* every buffer can loop (whole file): sources choose per play */
+    if (wav->wave.loop_len == 0)
+        wav->wave.loop_len = wav->wave.len;
+    const float duration = (float)wav->wave.len / wav->wave.frequency;
+
+    al_lock();
     n64_buffer_t *b = buffer_of(id);
-    float duration = -1.0f;
-    FILE *f = b ? fopen(path, "rb") : NULL;     /* wav64_open asserts */
-    if (f)
+    wav64_t *old = NULL;
+    if (b)
     {
-        fclose(f);
-        if (b->open)
-            wav64_close(&b->wav);
-        wav64_open(&b->wav, path);
-        b->open = 1;
-        /* every buffer can loop (whole file): sources choose per play */
-        if (b->wav.wave.loop_len == 0)
-            b->wav.wave.loop_len = b->wav.wave.len;
-        duration = (float)b->wav.wave.len / b->wav.wave.frequency;
+        old = b->wav;
+        b->wav = wav;
     }
+    else
+        old = wav;
     kmutex_unlock(&g_lock);
-    return duration;
+    if (old)
+    {
+        wav64_close(old);
+        free(old);
+    }
+    return b ? duration : -1.0f;
 }
 
 /* N64 extension: loop region of a buffer, in seconds (music) */
 void alBufferLoopN64(ALuint id, float start, float end)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_buffer_t *b = buffer_of(id);
-    if (b && b->open)
+    if (b && b->wav)
     {
-        waveform_t *w = &b->wav.wave;
+        waveform_t *w = &b->wav->wave;
         int e = end > 0.0f ? (int)(end * w->frequency) : w->len;
         if (e > w->len || e <= 0) e = w->len;
         int st = (int)(start * w->frequency);
+        /* the compressed stream can only be entered at a block boundary
+         * (1024 samples, 46 ms at most off the composer's loop point) */
+        st &= ~(SEEK_ALIGN - 1);
         if (st < 0 || st >= e) st = 0;
         w->loop_end = e;
         w->loop_len = e - st;
@@ -355,7 +395,7 @@ void alBufferLoopN64(ALuint id, float start, float end)
 /* --------------------------------------------------------------- sources -- */
 void alGenSources(ALsizei n, ALuint *ids)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     for (ALsizei k = 0; k < n; k++)
     {
         ids[k] = 0;
@@ -380,7 +420,7 @@ void alGenSources(ALsizei n, ALuint *ids)
 
 void alDeleteSources(ALsizei n, const ALuint *ids)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     for (ALsizei k = 0; k < n; k++)
     {
         n64_source_t *s = source_of(ids[k]);
@@ -396,7 +436,7 @@ ALboolean alIsSource(ALuint id) { return source_of(id) ? AL_TRUE : AL_FALSE; }
 
 void alSourcei(ALuint id, ALenum p, ALint v)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (!s)
         set_error(AL_INVALID_NAME);
@@ -422,7 +462,7 @@ void alSourcei(ALuint id, ALenum p, ALint v)
 
 void alSourcef(ALuint id, ALenum p, ALfloat v)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (!s)
         set_error(AL_INVALID_NAME);
@@ -443,7 +483,7 @@ void alSourcef(ALuint id, ALenum p, ALfloat v)
 
 void alSource3f(ALuint id, ALenum p, ALfloat x, ALfloat y, ALfloat z)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (!s)
         set_error(AL_INVALID_NAME);
@@ -457,7 +497,7 @@ void alSource3f(ALuint id, ALenum p, ALfloat x, ALfloat y, ALfloat z)
 
 void alGetSourcei(ALuint id, ALenum p, ALint *v)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (!s)
         set_error(AL_INVALID_NAME);
@@ -475,7 +515,7 @@ void alGetSourcei(ALuint id, ALenum p, ALint *v)
 
 void alSourcePlay(ALuint id)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (!s)
         set_error(AL_INVALID_NAME);
@@ -484,7 +524,8 @@ void alSourcePlay(ALuint id)
         /* resume where it was */
         source_play(s, (int)(id - 1));
         if (s->ch >= 0)
-            mixer_ch_set_pos(s->ch, s->paused_pos);
+            mixer_ch_set_pos(s->ch, (double)((int)s->paused_pos &
+                                             ~(SEEK_ALIGN - 1)));
     }
     else
         source_play(s, (int)(id - 1));
@@ -493,7 +534,7 @@ void alSourcePlay(ALuint id)
 
 void alSourceStop(ALuint id)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (s)
     {
@@ -505,7 +546,7 @@ void alSourceStop(ALuint id)
 
 void alSourcePause(ALuint id)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     n64_source_t *s = source_of(id);
     if (s && s->state == AL_PLAYING && s->ch >= 0)
     {
@@ -532,7 +573,7 @@ void alSourceUnqueueBuffers(ALuint id, ALsizei n, ALuint *b)
 /* -------------------------------------------------------------- listener -- */
 void alListener3f(ALenum p, ALfloat x, ALfloat y, ALfloat z)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     if (p == AL_POSITION)
     {
         g_listener_pos[0] = x; g_listener_pos[1] = y; g_listener_pos[2] = z;
@@ -545,7 +586,7 @@ void alListener3f(ALenum p, ALfloat x, ALfloat y, ALfloat z)
 
 void alListenerfv(ALenum p, const ALfloat *v)
 {
-    kmutex_lock(&g_lock);
+    al_lock();
     if (p == AL_ORIENTATION)
     {
         memcpy(g_listener_at, v, 3 * sizeof(float));

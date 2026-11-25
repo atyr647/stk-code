@@ -492,7 +492,7 @@ class Pipeline:
                 shutil.copy2(s, d)
 
     # -- shared meshes ------------------------------------------------------
-    def shared_mesh(self, p, cap, collides=False):
+    def shared_mesh(self, p, cap, collides=False, driveable=False):
         """library/ and models/ meshes: decimated once, independent of the
         track that uses them."""
         if p in self.done_meshes:
@@ -503,6 +503,14 @@ class Pipeline:
             if collides:
                 m = decimate(m, target, lock_border=True,
                              max_error_m=self.b["collision_error_m"])
+                # Objects made of many separate sheets (a tree's foliage)
+                # hardly shrink under a shape bound with locked borders: a
+                # pine kept 2,362 of its 2,808 triangles against a cap of
+                # 337, and a few of them filled the console's memory. What
+                # karts hit of such an object is its outline, which the
+                # looser simplification keeps -- unless karts drive on it.
+                if m.tri_count > 2 * target and not driveable:
+                    m = decimate(m, target, allow_sloppy=True)
             else:
                 m = decimate(m, target, allow_sloppy=True)
         self.write_mesh(p, m)
@@ -556,7 +564,8 @@ class Pipeline:
             else:
                 cap = max(self.b["min_mesh_tris"],
                           int(self.load(p).tri_count * self.b["library_ratio"]))
-            t = self.shared_mesh(p, cap, usage.collides.get(p, False))
+            t = self.shared_mesh(p, cap, usage.collides.get(p, False),
+                                 p in usage.driveable)
             shared_unique += t
             if p not in coarse:
                 shared_scene += t * c

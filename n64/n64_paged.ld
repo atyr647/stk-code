@@ -5,8 +5,9 @@
  *     libstdc++ exception support libdragon's crash reporting calls;
  *   - every other code input goes to .paged, linked at 0xC0800000 (TLB
  *     mapped) and stored on the cartridge as stk.paged by n64/make_rom.sh,
- *     with its constants (.rodata) and C++ exception tables: read-only
- *     data pages in the same way, through the TLB.
+ *     with its constants (.rodata), C++ exception tables and the unwind
+ *     tables (.eh_frame): read-only data pages in the same way, through
+ *     the TLB.
  * Everything else is unchanged from n64.ld.
  */
 /* ========================================================================
@@ -67,10 +68,15 @@ SECTIONS {
     } :main
 
    .eh_frame_hdr : { *(.eh_frame_hdr) }
-   .eh_frame : { 
-        __EH_FRAME_BEGIN__ = .; /* Define symbol for accessing eh_frame section */
-        KEEP (*(.eh_frame)) 
-    }
+   /* .eh_frame is paged: see the end of .paged. libdragon registers the
+      unwind tables at __EH_FRAME_BEGIN__ before any constructor has run,
+      and libgcc looks at their first word then: it is given an empty
+      table here, and the pager registers the real one once it can be
+      read (pager.c). */
+   .eh_frame_stub : {
+        __EH_FRAME_BEGIN__ = .;
+        LONG(0)
+   }
    .jcr : { KEEP (*(.jcr)) } 
 
     /* constants of the resident code only: the rest are paged with their
@@ -229,6 +235,8 @@ SECTIONS {
     /* paged code: not loaded at boot, see n64/compat/src/pager.c */
     .paged 0xC0800000 : {
         __paged_start = .;
+        /* what a race keeps coming back to, together (n64_hot_order.py) */
+        INCLUDE n64_paged_hot.ld
         *(.text .text.* .gnu.linkonce.t.*)
         /* read-only data of paged code: constants, and the C++ exception
            tables, which the (resident) personality routine reads while an
@@ -236,6 +244,13 @@ SECTIONS {
         . = ALIGN(16);
         *(.rdata .rodata .rodata.* .gnu.linkonce.r.*)
         *(.gcc_except_table*)
+        /* The unwind tables of the whole program (730 KB): read only while
+           an exception is being thrown, by libgcc, in normal context. In
+           RAM they were the difference between Lighthouse fitting or not.
+           (crtend.o's zero terminator must stay last: link order.) */
+        . = ALIGN(8);
+        __paged_eh_frame = .;
+        KEEP (*(.eh_frame))
         . = ALIGN(16);
         __paged_end = .;
     } :paged

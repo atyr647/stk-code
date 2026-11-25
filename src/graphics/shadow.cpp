@@ -37,6 +37,15 @@
 #include <SMesh.h>
 #include <SMeshBuffer.h>
 
+/** How far above the ground the shadow is drawn. The N64's depth buffer
+ *  is 16 bits: 2 cm is below its resolution a few metres from the camera,
+ *  and the shadow fought with the road for every other scanline. */
+#ifdef N64
+static const float SHADOW_LIFT = 0.06f;
+#else
+static const float SHADOW_LIFT = 0.02f;
+#endif
+
 Shadow::Shadow(Material* shadow_mat, const AbstractKart& kart)
       : m_node(NULL), m_shadow_enabled(false), m_kart(kart)
 {
@@ -153,7 +162,7 @@ void Shadow::update(bool enabled)
         {
             const btWheelInfo& wi = m_kart.getVehicle()->getWheelInfo(i);
             Vec3 up_vector = kart_trans.getBasis().getColumn(1);
-            up_vector = up_vector * (wi.m_raycastInfo.m_suspensionLength - 0.02f);
+            up_vector = up_vector * (wi.m_raycastInfo.m_suspensionLength - SHADOW_LIFT);
             Vec3 pos = kart_trans(Vec3(v[i].m_position)) - up_vector;
             v[i].m_position = pos.toIrrVector();
             v[i].m_normal = MiniGLM::compressVector3
@@ -181,7 +190,7 @@ void Shadow::update(bool enabled)
         {
             const btWheelInfo& wi = m_kart.getVehicle()->getWheelInfo(i);
             Vec3 up_vector = kart_trans.getBasis().getColumn(1);
-            up_vector = up_vector * (wi.m_raycastInfo.m_suspensionLength - 0.02f);
+            up_vector = up_vector * (wi.m_raycastInfo.m_suspensionLength - SHADOW_LIFT);
             Vec3 pos = kart_trans(position[i]) - up_vector;
             buffer->getPosition(i) = pos.toIrrVector();
             buffer->setNormal(i, Vec3(wi.m_raycastInfo.m_contactNormalWS)

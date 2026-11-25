@@ -402,8 +402,11 @@ void MainLoop::updateRace(int ticks, bool fast_forward)
  */
 #ifdef STK_N64_LOG_HEAP
 extern "C" uint32_t stk_n64_pager_faults(void);   // n64/compat/src/pager.c
+extern "C" void stk_n64_pager_trace_dump(void);
 #ifndef SERVER_ONLY
 extern "C" unsigned stk_n64_al_plays, stk_n64_al_buffers;   // al_n64.c
+extern "C" unsigned stk_n64_al_ms(void);
+extern "C" uint32_t stk_n64_pager_ms(void);
 #endif
 #endif
 
@@ -440,15 +443,19 @@ void MainLoop::run()
                 static uint32_t faults = 0;
                 const uint32_t f = stk_n64_pager_faults();
 #ifndef SERVER_ONLY
-                Log::info("MainLoop", "%d frames in 10 s, %u page faults, "
-                          "%u sounds started, %u audio buffers",
-                          frames, (unsigned)(f - faults), stk_n64_al_plays,
-                          stk_n64_al_buffers);
+                static unsigned pager_ms = 0, al_ms = 0;
+                const unsigned pm = stk_n64_pager_ms(), am = stk_n64_al_ms();
+                Log::info("MainLoop", "%d frames in 10 s, %u page faults "
+                          "(%u ms), audio %u ms, %u sounds started",
+                          frames, (unsigned)(f - faults), pm - pager_ms,
+                          am - al_ms, stk_n64_al_plays);
+                pager_ms = pm; al_ms = am;
 #else
                 Log::info("MainLoop", "%d frames in 10 s, %u page faults",
                           frames, (unsigned)(f - faults));
 #endif
                 faults = f;
+                stk_n64_pager_trace_dump();
                 frames = 0;
                 last = now;
             }

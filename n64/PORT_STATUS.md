@@ -108,8 +108,14 @@ mean finish time, 2 runs per side; a track failing a statistical check is
 re-run to 6 runs per side before it counts. The latest run uses the desktop
 low-memory build with collision served from the generated files:
 
-- **21 of 21 race tracks pass**, with lap times within ±3.6% of the original
-  and no extra rescues.
+- **21 of 21 race tracks pass** the acceptance threshold, which is a mean
+  lap time within ±10% of the original and no extra rescues. The observed
+  range in [validate_report.json](validate_report.json) is -3.1% (Mini
+  Golf) to +4.9% (Ravenbridge Mansion; Oliver's Math Class is +3.8%), from
+  2 runs per side: enough to catch a broken track, not to rank small
+  differences. That report is for the asset set before library objects
+  were simplified further and karts went to 1,200 triangles; it has not
+  been re-run on the current set.
 - **Karts:** none is quite at the ≈500-triangle target. Tux (502) and Gnu
   (515) are close; the rest stall at 526–3,447 triangles because their
   bodies are many disconnected pieces.

@@ -36,7 +36,9 @@ if(STK_N64_PAGED AND NOT SERVER_ONLY)
     set_property(SOURCE ${STK_N64_DIR}/compat/src/n64_main.cpp APPEND PROPERTY
         COMPILE_OPTIONS -fno-lto)
     set_property(TARGET supertuxkart APPEND PROPERTY LINK_DEPENDS
-        ${STK_N64_DIR}/n64_paged.ld)
+        ${STK_N64_DIR}/n64_paged.ld ${STK_N64_DIR}/n64_paged_hot.ld)
+    # n64_paged.ld includes n64_paged_hot.ld (n64/tools/n64_hot_order.py)
+    target_link_options(supertuxkart PRIVATE "-L${STK_N64_DIR}")
     # nothing calls into pager.c (it starts from a constructor): pull it
     # out of libstk_n64_compat.a explicitly
     target_link_options(supertuxkart PRIVATE "-Wl,--undefined=stk_n64_pager_faults")
