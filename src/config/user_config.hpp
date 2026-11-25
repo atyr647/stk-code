@@ -840,7 +840,13 @@ namespace UserConfigParams
 
     PARAM_PREFIX int m_default_gamepad    PARAM_DEFAULT( -1 );
 
+#ifdef N64
+    // as on Android (main_android.cpp): a console starts at the main menu
+    // with a default player, who can be renamed or added to there
+    PARAM_PREFIX bool m_enforce_current_player PARAM_DEFAULT( true );
+#else
     PARAM_PREFIX bool m_enforce_current_player PARAM_DEFAULT( false );
+#endif
 
     PARAM_PREFIX bool m_enable_sound PARAM_DEFAULT( true );
 

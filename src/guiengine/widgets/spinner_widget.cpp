@@ -290,7 +290,8 @@ void SpinnerWidget::resize()
 {
     Widget::resize();
 
-    rect<s32> subsize_left_arrow = rect<s32>(0 ,0, m_h, m_h);
+    const int arrow = arrowWidth();
+    rect<s32> subsize_left_arrow = rect<s32>(0 ,0, arrow, m_h);
     m_left_arrow = subsize_left_arrow;
     m_children[0].m_element->setRelativePosition(subsize_left_arrow);
     m_badge_x_shift = subsize_left_arrow.getWidth();
@@ -301,9 +302,9 @@ void SpinnerWidget::resize()
         assert(texture != NULL);
 
         const int texture_width = texture->getSize().Width;
-        const int free_h_space = m_w-m_h*2-texture_width; // to center image
+        const int free_h_space = m_w-arrow*2-texture_width; // to center image
 
-        rect<s32> subsize_label = rect<s32>(m_h+free_h_space/2, 0, m_w-m_h+free_h_space/2, m_h);
+        rect<s32> subsize_label = rect<s32>(arrow+free_h_space/2, 0, m_w-arrow+free_h_space/2, m_h);
         m_children[1].m_element->setRelativePosition(subsize_label);
     }
     else
@@ -311,7 +312,7 @@ void SpinnerWidget::resize()
         resizeLabel();
     }
 
-    rect<s32> subsize_right_arrow = rect<s32>(m_w-m_h, 0, m_w, m_h);
+    rect<s32> subsize_right_arrow = rect<s32>(m_w-arrow, 0, m_w, m_h);
     m_children[2].m_element->setRelativePosition(subsize_right_arrow);
 } // resize
 
@@ -323,11 +324,12 @@ void SpinnerWidget::resizeLabel()
     if (m_graphical) // Don't proceed further if this spinner doesn't use labels
         return;
 
-    rect<s32> subsize_label = rect<s32>(m_h, 0, m_w - m_h, m_h);
+    const int arrow = arrowWidth();
+    rect<s32> subsize_label = rect<s32>(arrow, 0, m_w - arrow, m_h);
     IGUIStaticText* label = static_cast<IGUIStaticText*>(m_children[1].m_element);
     label->setRelativePosition(subsize_label);
     if ( (m_h < GUIEngine::getFontHeight()) ||
-         ((int)GUIEngine::getFont()->getDimension(label->getText()).Width > (m_w - 2 * m_h)) )
+         ((int)GUIEngine::getFont()->getDimension(label->getText()).Width > (m_w - 2 * arrow)) )
     {
         label->setOverrideFont(GUIEngine::getSmallFont());
     }

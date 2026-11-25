@@ -903,6 +903,17 @@ namespace GUIEngine
         clear();
 
         gui_messages.clear();
+#ifdef N64
+        // The menu stack is cleared when a race starts (StateManager::
+        // enterGameState), so every menu is rebuilt from its file when it is
+        // shown again: their widgets would only take RAM during the race.
+        Screen* screen;
+        for_in (screen, g_loaded_screens)
+        {
+            if (screen->isLoaded())
+                screen->unload();
+        }
+#endif
     }   // cleanForGame
 
     // ------------------------------------------------------------------------

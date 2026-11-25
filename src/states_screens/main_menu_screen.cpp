@@ -142,6 +142,11 @@ void MainMenuScreen::init()
 
     m_user_id = getWidget<ButtonWidget>("user-id");
     assert(m_user_id);
+#ifdef N64
+    // One default player (UserConfigParams::m_enforce_current_player): the
+    // console has no player profiles to create, rename or switch.
+    m_user_id->setVisible(false);
+#endif
 
     // reset in case we're coming back from a race
     NetworkConfig::get()->cleanNetworkPlayers();

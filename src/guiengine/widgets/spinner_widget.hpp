@@ -125,6 +125,10 @@ namespace GUIEngine
 
         /** Pick the appropriate font size to display the current spinner label */
         void resizeLabel();
+        /** Width of each arrow: square, but at most a third of the widget,
+         *  so that a narrow spinner (a small screen) keeps room for its
+         *  label. */
+        int arrowWidth() const { return m_h * 3 > m_w ? m_w / 3 : m_h; }
        
     public:
 
