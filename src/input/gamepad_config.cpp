@@ -199,6 +199,26 @@ core::stringw GamepadConfig::getBindingAsString(const PlayerAction action) const
         { SDL_CONTROLLER_AXIS_TRIGGERRIGHT_UP, _("Right trigger") }
     }};
 
+#ifdef N64
+    // The N64 controller's own names, for the SDL names its buttons are
+    // mapped under (N64_MAPPING in n64/compat/src/sdl_n64.c)
+    readable[SDL_CONTROLLER_BUTTON_X]             = "Z";
+    readable[SDL_CONTROLLER_BUTTON_Y]             = "C-Down";
+    readable[SDL_CONTROLLER_BUTTON_BACK]          = "C-Left";
+    readable[SDL_CONTROLLER_BUTTON_LEFTSTICK]     = "C-Up";
+    readable[SDL_CONTROLLER_BUTTON_LEFTSHOULDER]  = "C-Right";
+    readable[SDL_CONTROLLER_BUTTON_RIGHTSHOULDER] = "R";
+    readable[SDL_CONTROLLER_BUTTON_START]         = "Start";
+    readable[SDL_CONTROLLER_BUTTON_DPAD_UP]       = "D-Pad up";
+    readable[SDL_CONTROLLER_BUTTON_DPAD_DOWN]     = "D-Pad down";
+    readable[SDL_CONTROLLER_BUTTON_DPAD_LEFT]     = "D-Pad left";
+    readable[SDL_CONTROLLER_BUTTON_DPAD_RIGHT]    = "D-Pad right";
+    readable[SDL_CONTROLLER_AXIS_LEFTX_RIGHT]     = "Control Stick right";
+    readable[SDL_CONTROLLER_AXIS_LEFTX_LEFT]      = "Control Stick left";
+    readable[SDL_CONTROLLER_AXIS_LEFTY_DOWN]      = "Control Stick down";
+    readable[SDL_CONTROLLER_AXIS_LEFTY_UP]        = "Control Stick up";
+#endif
+
     const Binding &b = getBinding(action);
     int id = b.getId();
     Input::AxisDirection ad = b.getDirection();

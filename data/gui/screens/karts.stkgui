@@ -24,7 +24,7 @@
                     <spacer width="2%"/>
                     <checkbox id="favorite"/>
                     <spacer width="1%"/>
-                    <label proportion="31" height="100%" I18N="In the track and grand prix selection screen" text="Edit favorite karts"/>
+                    <label id="favorite_label" proportion="31" height="100%" I18N="In the track and grand prix selection screen" text="Edit favorite karts"/>
                 </div>
                 <spacer height="3%"/>
                 <div width="100%" proportion="1" layout="horizontal-row" align="center">

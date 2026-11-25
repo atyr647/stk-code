@@ -44,6 +44,7 @@ OptionsScreenInput::OptionsScreenInput() : Screen("options/options_input.stkgui"
 
 void OptionsScreenInput::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
     video::ITexture* icon1 = irr_driver->getTexture( file_manager->getAsset(FileManager::GUI_ICON,"keyboard.png"   ));
     video::ITexture* icon2 = irr_driver->getTexture( file_manager->getAsset(FileManager::GUI_ICON,"keyboard_off.png"   ));
     video::ITexture* icon3 = irr_driver->getTexture( file_manager->getAsset(FileManager::GUI_ICON,"gamepad.png"    ));

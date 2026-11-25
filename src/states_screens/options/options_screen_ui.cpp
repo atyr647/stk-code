@@ -46,6 +46,7 @@ OptionsScreenUI::OptionsScreenUI() : Screen("options/options_ui.stkgui")
 
 void OptionsScreenUI::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
     m_inited = false;
 
     m_base_skin_selector = getWidget<GUIEngine::SpinnerWidget>("base_skinchoice");

@@ -60,6 +60,7 @@ namespace OptionsCommon
 
     // Enable or disable the players and language tabs depending on the in-game pause status
     void setTabStatus();
+    void trimTabsForConsole(GUIEngine::Screen* screen);
 }
 
 #endif

@@ -20,6 +20,7 @@
 #include "states_screens/options/options_common.hpp"
 
 #include "guiengine/screen.hpp"
+#include "guiengine/widgets/ribbon_widget.hpp"
 
 namespace OptionsCommon
 {
@@ -61,11 +62,37 @@ namespace OptionsCommon
         GUIEngine::Widget* language = GUIEngine::getWidget("tab_language");
         bool is_pause = StateManager::get()->getGameState() == GUIEngine::INGAME_MENU;
 
-        players->setActive(!is_pause);
-        language->setActive(!is_pause);
-        updatePauseTooltip(players, is_pause);
-        updatePauseTooltip(language, is_pause);
+        // (not there on the N64, see trimTabsForConsole)
+        if (players)
+        {
+            players->setActive(!is_pause);
+            updatePauseTooltip(players, is_pause);
+        }
+        if (language)
+        {
+            language->setActive(!is_pause);
+            updatePauseTooltip(language, is_pause);
+        }
     } // setTabStatus
+
+    /** Called by each options screen when it is loaded. On the N64 the
+     *  tabs for what the console does not have are left out: General (its
+     *  settings are for the internet connection), Players (one default
+     *  player) and Language (translations are not on the cartridge). */
+    void trimTabsForConsole(GUIEngine::Screen* screen)
+    {
+#ifdef N64
+        GUIEngine::RibbonWidget* tabs =
+            screen->getWidget<GUIEngine::RibbonWidget>("options_choice");
+        if (!tabs)
+            return;
+        tabs->removeChildNamed("tab_general");
+        tabs->removeChildNamed("tab_players");
+        tabs->removeChildNamed("tab_language");
+#else
+        (void)screen;
+#endif
+    } // trimTabsForConsole
 }
 
 #endif // ifndef SERVER_ONLY

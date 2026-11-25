@@ -85,6 +85,7 @@ OptionsScreenVideo::OptionsScreenVideo() : Screen("options/options_video.stkgui"
 // --------------------------------------------------------------------------------------------
 void OptionsScreenVideo::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
     assert(gfx_presets.size() == 7);
     assert(blur_presets.size() == 3);
 

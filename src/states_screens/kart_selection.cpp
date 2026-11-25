@@ -178,6 +178,14 @@ void KartSelectionScreen::loadedFromFile()
 
 void KartSelectionScreen::beforeAddingWidget()
 {
+#ifdef N64
+    // no keyboard to search with; favourites are edited with a pointer
+    for (const char* id : { "search", "favorite", "favorite_label" })
+    {
+        if (Widget* w = getWidget(id))
+            w->setVisible(false);
+    }
+#endif
     kart_properties_manager->setFavoriteKartStatus(
         PlayerManager::getCurrentPlayer()->getFavoriteKartStatus()
     );

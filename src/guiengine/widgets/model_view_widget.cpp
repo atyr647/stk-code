@@ -29,6 +29,7 @@
 #include <ILightSceneNode.h>
 #include <ISceneManager.h>
 #include <IMeshSceneNode.h>
+#include <IVideoDriver.h>
 
 #include <algorithm>
 #ifndef SERVER_ONLY
@@ -176,12 +177,14 @@ void ModelViewWidget::update(float delta)
 #ifdef SERVER_ONLY
     return;
 #else
+#ifndef N64   // drawn straight to the screen there, see drawRTTScene()
     if (m_render_target == NULL)
     {
         std::string name = "model view ";
         name += m_properties[PROP_ID].c_str();
         m_render_target = irr_driver->createRenderTarget(irr::core::dimension2du(m_rtt_size, m_rtt_size), name);
     }
+#endif
 
     if (m_rtt_main_node == NULL)
     {
@@ -196,7 +199,9 @@ void ModelViewWidget::update(float delta)
         m_rtt_main_node->OnAnimate(os::Timer::getTime());
 #endif
 
+#ifndef N64
     m_render_target->renderToTexture(m_camera, GUIEngine::getLatestDt());
+#endif
 
     m_rtt_main_node->setVisible(false);
 #endif
@@ -377,8 +382,42 @@ void ModelViewWidget::clearRttProvider()
 void ModelViewWidget::drawRTTScene(const irr::core::rect<s32>& dest_rect) const
 {
 #ifndef SERVER_ONLY
+#ifdef N64
+    // A texture on the console holds 64x32 texels at most: a model rendered
+    // to one and stretched over the widget is a blur. The model is drawn
+    // straight into the widget's rectangle of the frame instead, over the
+    // menu's background.
+    if (m_rtt_main_node == NULL || m_camera == NULL || m_rtt_unsupported)
+        return;
+    video::IVideoDriver* driver = irr_driver->getVideoDriver();
+    scene::ISceneManager* sm = irr_driver->getSceneManager();
+    const core::recti screen(core::position2di(0, 0),
+                             driver->getScreenSize());
+    core::recti area = dest_rect;
+    area.clipAgainst(screen);
+    if (area.getWidth() <= 0 || area.getHeight() <= 0)
+        return;
+    scene::ICameraSceneNode* previous = sm->getActiveCamera();
+    const float aspect = m_camera->getAspectRatio();
+    m_camera->setAspectRatio((float)area.getWidth() / area.getHeight());
+    sm->setActiveCamera(m_camera);
+    driver->setViewPort(area);
+    driver->clearZBuffer();
+    video::SOverrideMaterial &o = driver->getOverrideMaterial();
+    o.EnablePasses = scene::ESNRP_SOLID;
+    o.EnableFlags = video::EMF_MATERIAL_TYPE;
+    o.Material.MaterialType = video::EMT_SOLID;
+    m_rtt_main_node->setVisible(true);
+    sm->drawAll();
+    m_rtt_main_node->setVisible(false);
+    o.EnablePasses = 0;
+    driver->setViewPort(screen);
+    m_camera->setAspectRatio(aspect);
+    sm->setActiveCamera(previous);
+#else
     if(m_render_target != NULL)
         m_render_target->draw2DImage(dest_rect, NULL, video::SColor(255, 255, 255, 255), true);
+#endif
 #endif
 }   // drawRTTScene
 

@@ -977,7 +977,13 @@ namespace UserConfigParams
 
     // This saves the actual user preference.
     PARAM_PREFIX IntUserConfigParam        m_xmas_mode
+#ifdef N64
+            // the console has no clock: its date is always 1 January, which
+            // STK counts as Christmas time
+            PARAM_DEFAULT(  IntUserConfigParam(2, "christmas-mode",
+#else
             PARAM_DEFAULT(  IntUserConfigParam(0, "christmas-mode",
+#endif
                             &m_graphics_quality, "Christmas hats: 0 use current date, 1 always on, 2 always off") );
 
     // This saves the actual user preference.

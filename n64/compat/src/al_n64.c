@@ -16,14 +16,12 @@
  *     gain, pitch and stereo position are recomputed from OpenAL's default
  *     distance model (inverse distance, clamped) and the listener whenever
  *     one of them changes;
- *   - a thread of its own, woken by the audio interface, keeps the mixer
- *     fed.
+ *   - the game's main thread keeps the mixer fed (stk_n64_audio_service).
  *
  * Calls come from several of STK's threads (the SFX manager has one): one
  * kernel mutex covers the state and the mixer.
  */
 #include <libdragon.h>
-#include <kirq.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -65,26 +63,31 @@ static ALenum       g_error = AL_NO_ERROR;
 static kmutex_t     g_lock;
 static int          g_up;
 
+/* sounds started and mixer buffers written, for the heap log's heartbeat */
+unsigned stk_n64_al_plays, stk_n64_al_buffers;
+
 static void set_error(ALenum e) { if (g_error == AL_NO_ERROR) g_error = e; }
 
 /* ----------------------------------------------------------------- mixer -- */
-static int audio_thread(void *arg)
+/* The mixer is fed from the game's own thread (the SDL back-end calls this
+ * whenever it is called itself: event polls, texture uploads, frame swaps;
+ * STK's loading screens come through there too). An audio thread of its own
+ * was tried first: libdragon's RSP queue and its users are not made for
+ * two threads, and the game froze while sounds were being loaded. The price
+ * is that a frame longer than the audio buffer (160 ms) is heard as a gap. */
+void stk_n64_audio_service(void)
 {
-    (void)arg;
-    for (;;)
+    if (!g_up)
+        return;
+    kmutex_lock(&g_lock);
+    while (audio_can_write())
     {
-        kirq_wait_t w = kirq_begin_wait_ai();
-        kmutex_lock(&g_lock);
-        while (audio_can_write())
-        {
-            short *buf = audio_write_begin();
-            mixer_poll(buf, audio_get_buffer_length());
-            audio_write_end();
-        }
-        kmutex_unlock(&g_lock);
-        kirq_wait(&w);
+        short *buf = audio_write_begin();
+        mixer_poll(buf, audio_get_buffer_length());
+        audio_write_end();
+        stk_n64_al_buffers++;
     }
-    return 0;
+    kmutex_unlock(&g_lock);
 }
 
 static n64_buffer_t *buffer_of(ALuint id)
@@ -212,6 +215,7 @@ static void source_play(n64_source_t *s, int index)
         return;
     }
     s->ch = ch;
+    stk_n64_al_plays++;
     mixer_ch_play(ch, &b->wav.wave);
     mixer_ch_set_loop(ch, s->looping);
     s->state = AL_PLAYING;
@@ -231,7 +235,6 @@ ALCdevice *alcOpenDevice(const ALCchar *name)
         audio_init(OUTPUT_RATE, AUDIO_DEFAULT_LATENCY);
         mixer_init(MIX_CHANNELS);
         wav64_init_compression(2);          /* ULC: the pipeline's codec */
-        kthread_new("audio", 8192, 20, audio_thread, NULL);
         g_up = 1;
     }
     return (ALCdevice *)&g_device;

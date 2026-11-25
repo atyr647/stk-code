@@ -163,6 +163,14 @@ void TracksAndGPScreen::eventCallback(Widget* widget, const std::string& name,
 void TracksAndGPScreen::beforeAddingWidget()
 {
     Screen::init();
+#ifdef N64
+    // no keyboard to search with; favourites are edited with a pointer
+    for (const char* id : { "search", "favorite", "favorite_label" })
+    {
+        if (Widget* w = getWidget(id))
+            w->setVisible(false);
+    }
+#endif
     
     // Add user-defined group to track groups
     track_manager->setFavoriteTrackStatus(PlayerManager::getCurrentPlayer()->getFavoriteTrackStatus());

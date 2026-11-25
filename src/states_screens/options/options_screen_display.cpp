@@ -49,6 +49,7 @@ OptionsScreenDisplay::OptionsScreenDisplay() : Screen("options/options_display.s
 
 void OptionsScreenDisplay::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
     m_inited = false;
 
     // Setup splitscreen spinner

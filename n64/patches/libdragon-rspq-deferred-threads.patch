@@ -1,0 +1,135 @@
+diff --git a/src/rspq/rspq.c b/src/rspq/rspq.c
+index fcf358c..9992453 100644
+--- a/src/rspq/rspq.c
++++ b/src/rspq/rspq.c
+@@ -1709,52 +1709,67 @@ void rspq_syncpoint_wait(rspq_syncpoint_t sync_id)
+  */ 
+ bool __rspq_deferred_poll(void)
+ {
+-    rspq_deferred_call_t *prev = NULL, *cur =  defcalls_head;
+-    while (cur != NULL) {
+-        rspq_deferred_call_t *next = cur->next;
+-
+-        // Since the list is chronologically sorted, once we reach the first
+-        // call that is still waiting for its RSP checkpoint, we can stop.
+-        if (!rspq_syncpoint_check(cur->sync))
+-            break;
+-
+-        // If this call requires waiting for SYNC_FULL, check if we reached it.
+-        // Otherwise, jsut skio it and go through the list: maybe a later callback
+-        // does not require RDP and can be called.
+-        if (cur->flags & RSPQ_DCF_WAITRDP) {
+-            int difference = (int)((uint32_t)(cur->sync) - (uint32_t)(__rdpq_syncpoint_at_syncfull));
+-            if (difference <= 0)
+-                cur->flags &= ~RSPQ_DCF_WAITRDP;
+-        }
+-
+-        // If this call does not require waiting for next SYNC_FULL, call it.
+-        if (!(cur->flags & RSPQ_DCF_WAITRDP)) {
+-            // Call the deferred calllback. Account the time to user-time as
+-            // this is actually a non-kernel activity that's just deferred.
+-            ACCT_SCOPE(ACCT_CAT_USER) cur->func(cur->arg);
+-
+-            // Remove it from the list (possibly updating the head/tail pointer)
+-            if (prev)
+-                prev->next = next;
+-            else
+-                defcalls_head = next;
+-            if (!next)
+-                defcalls_tail = prev;
+-            defcalls_count--;
+-            free(cur);
++    // The list is shared by every thread that waits on the RSP (with kernel
++    // threads: a game thread drawing and an audio thread mixing). A call is
++    // taken off the list with interrupts disabled, so no other thread can
++    // see the list half-changed, and is run after they are enabled again.
++    for (;;) {
++        rspq_deferred_call_t *found = NULL;
++
++        disable_interrupts();
++        rspq_deferred_call_t *prev = NULL, *cur = defcalls_head;
++        while (cur != NULL) {
++            // Since the list is chronologically sorted, once we reach the first
++            // call that is still waiting for its RSP checkpoint, we can stop.
++            if (!rspq_syncpoint_check(cur->sync))
++                break;
+ 
+-            if (defcalls_count < defcalls_run_threshold)
++            // If this call requires waiting for SYNC_FULL, check if we reached it.
++            // Otherwise, just skip it and go through the list: maybe a later
++            // callback does not require RDP and can be called.
++            if (cur->flags & RSPQ_DCF_WAITRDP) {
++                int difference = (int)((uint32_t)(cur->sync) - (uint32_t)(__rdpq_syncpoint_at_syncfull));
++                if (difference <= 0)
++                    cur->flags &= ~RSPQ_DCF_WAITRDP;
++            }
++
++            if (!(cur->flags & RSPQ_DCF_WAITRDP)) {
++                // Remove it from the list (possibly updating the head/tail pointer)
++                if (prev)
++                    prev->next = cur->next;
++                else
++                    defcalls_head = cur->next;
++                if (!cur->next)
++                    defcalls_tail = prev;
++                defcalls_count--;
++                found = cur;
+                 break;
+-        } else {
++            }
+             prev = cur;
++            cur = cur->next;
+         }
++        const bool more = defcalls_count >= defcalls_run_threshold;
++        enable_interrupts();
+ 
+-        cur = next;
++        if (!found)
++            break;
++
++        // Call the deferred calllback. Account the time to user-time as
++        // this is actually a non-kernel activity that's just deferred.
++        ACCT_SCOPE(ACCT_CAT_USER) found->func(found->arg);
++        free(found);
++
++        // Process maximum one callback per call, unless too many are queued.
++        if (!more)
++            break;
+     }
+ 
++    disable_interrupts();
+     defcalls_run_threshold = (defcalls_run_threshold * 4 / 8) + (defcalls_count * 4 / 8);
++    const bool pending = defcalls_head != NULL;
++    enable_interrupts();
+ 
+-    return defcalls_head != NULL;
++    return pending;
+ }
+ 
+ rspq_syncpoint_t __rspq_call_deferred(void (*func)(void *), void *arg, bool waitrdp)
+@@ -1769,11 +1784,14 @@ rspq_syncpoint_t __rspq_call_deferred(void (*func)(void *), void *arg, bool wait
+     call->func = func;
+     call->arg = arg;
+     call->next = NULL;
+-    call->sync = rspq_syncpoint_new();
+     if (waitrdp)
+-        call->flags |= RSPQ_DCF_WAITRDP;
++        call->flags |= RSPQ_DCF_WAITRDP;    // (the low bits of func)
++
++    call->sync = rspq_syncpoint_new();
+ 
+-    // Add it to the list of deferred calls
++    // Add it to the list of deferred calls (see __rspq_deferred_poll for
++    // why with interrupts disabled)
++    disable_interrupts();
+     if (defcalls_tail) {
+         defcalls_tail->next = call;
+     } else {
+@@ -1781,6 +1799,7 @@ rspq_syncpoint_t __rspq_call_deferred(void (*func)(void *), void *arg, bool wait
+     }
+     defcalls_tail = call;
+     defcalls_count++;
++    enable_interrupts();
+ 
+     return call->sync;
+ }

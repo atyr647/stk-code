@@ -49,6 +49,7 @@ OptionsScreenDevice::OptionsScreenDevice() : Screen("options/options_device.stkg
 
 void OptionsScreenDevice::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
 }   // loadedFromFile
 
 // ----------------------------------------------------------------------------

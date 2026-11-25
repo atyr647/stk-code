@@ -44,6 +44,7 @@ OptionsScreenLanguage::OptionsScreenLanguage() : Screen("options/options_languag
 
 void OptionsScreenLanguage::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
     m_inited = false;
 }   // loadedFromFile
 

@@ -36,6 +36,7 @@ OptionsScreenAudio::OptionsScreenAudio() : Screen("options/options_audio.stkgui"
 
 void OptionsScreenAudio::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
 }   // loadedFromFile
 
 // -----------------------------------------------------------------------------

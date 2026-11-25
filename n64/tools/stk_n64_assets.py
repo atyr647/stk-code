@@ -61,7 +61,7 @@ BUDGETS = {
     # meant 57 m on cocoa_temple).
     "far_error_m": 6.0,
     # karts: body + all parts, per kart
-    "kart_tris": 500,
+    "kart_tris": 1200,
     # shared models/ (items, powerups) and library objects: per mesh cap
     "model_tris": 160,
     "library_ratio": 0.12,

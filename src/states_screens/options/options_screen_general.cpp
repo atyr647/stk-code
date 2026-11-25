@@ -44,6 +44,7 @@ OptionsScreenGeneral::OptionsScreenGeneral() : Screen("options/options_general.s
 
 void OptionsScreenGeneral::loadedFromFile()
 {
+    OptionsCommon::trimTabsForConsole(this);
     m_inited = false;
 }   // loadedFromFile
 

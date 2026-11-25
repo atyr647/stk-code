@@ -46,6 +46,7 @@
 #include "states_screens/race_gui_base.hpp"
 #include "states_screens/race_gui_multitouch.hpp"
 #include "states_screens/race_setup_screen.hpp"
+#include "states_screens/options/options_screen_audio.hpp"
 #include "states_screens/options/options_screen_general.hpp"
 #include "states_screens/state_manager.hpp"
 #include "utils/string_utils.hpp"
@@ -388,7 +389,11 @@ GUIEngine::EventPropagation
         {
             dismiss();
 #ifndef SERVER_ONLY
+#ifdef N64
+            OptionsScreenAudio::getInstance()->push();
+#else
             OptionsScreenGeneral::getInstance()->push();
+#endif
 #endif
             return GUIEngine::EVENT_BLOCK;
         }

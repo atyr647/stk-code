@@ -53,6 +53,7 @@
 #include "states_screens/online/online_profile_achievements.hpp"
 #include "states_screens/online/online_profile_servers.hpp"
 #include "states_screens/online/online_screen.hpp"
+#include "states_screens/options/options_screen_audio.hpp"
 #include "states_screens/options/options_screen_general.hpp"
 #include "states_screens/state_manager.hpp"
 #include "states_screens/options/user_screen.hpp"
@@ -101,6 +102,17 @@ void MainMenuScreen::loadedFromFile()
     {
         rw_top->removeChildNamed("story");
     }
+
+#ifdef N64
+    // The console has no network (the online code itself is kept: only its
+    // menu entries are left out), nothing to quit to, and no keyboard for
+    // the grand prix editor's names.
+    rw_top->removeChildNamed("online");
+    rw_top->removeChildNamed("addons");
+    RibbonWidget* rw_n64 = getWidget<RibbonWidget>("menu_bottomrow");
+    rw_n64->removeChildNamed("gpEditor");
+    rw_n64->removeChildNamed("quit");
+#endif
 
 #if DEBUG_MENU_ITEM != 1
     RibbonWidget* rw = getWidget<RibbonWidget>("menu_bottomrow");
@@ -172,9 +184,12 @@ void MainMenuScreen::init()
     if (addons_manager && addons_manager->isLoading())
     {
         IconButtonWidget* w = getWidget<IconButtonWidget>("addons");
-        w->setActive(false);
-        w->resetAllBadges();
-        w->setBadge(LOADING_BADGE);
+        if (w)
+        {
+            w->setActive(false);
+            w->resetAllBadges();
+            w->setBadge(LOADING_BADGE);
+        }
     }
 
     // Initialize news iteration, show dialog when there's important news
@@ -558,7 +573,12 @@ void MainMenuScreen::eventCallback(Widget* widget, const std::string& name,
     }
     else if (selection == "options")
     {
+#ifdef N64
+        // General holds the internet settings, see trimTabsForConsole()
+        OptionsScreenAudio::getInstance()->push();
+#else
         OptionsScreenGeneral::getInstance()->push();
+#endif
     }
     else if (selection == "quit")
     {
